@@ -120,6 +120,18 @@ describe('CLI mbi server lokal (fixture)', () => {
     expect(text.stdout).not.toContain('MISSING_');
   });
 
+  it("--save-lhr pa Lighthouse: s'krijohet .lhr.json dhe CLI e thotë pse", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'save-lhr-cli-'));
+    try {
+      const { code, stderr } = await runCli([`http://${host}/`, '--allow-local', host, '--no-lighthouse', '--save-lhr', '--out', dir]);
+      expect(code).toBe(0);
+      expect(stderr).toContain("--save-lhr: LHR s'u ruajt — Lighthouse s'dha rezultat (Lighthouse u çaktivizua");
+      expect(fs.readdirSync(dir).filter((f) => f.endsWith('.lhr.json'))).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('host lokal pa --allow-local refuzohet (exit 2)', async () => {
     const { code, stderr } = await runCli([`http://${host}/`, '--no-lighthouse', '--out', outDir]);
     expect(code).toBe(2);
@@ -162,6 +174,31 @@ describe('CLI mbi server lokal (fixture)', () => {
       expect((report.lighthouse as { formFactor: string }).formFactor).toBe('mobile');
       // https mungon → security s'është null; health gjenerohet (asnjë kategori kyçe s'mungon)
       expect(report.health!.score).not.toBeNull();
+    },
+    200_000,
+  );
+
+  it.runIf(process.env.RUN_LIGHTHOUSE_TESTS === '1')(
+    '--save-lhr me Lighthouse: LHR i plotë pranë raportit, i lidhur me emër',
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'save-lhr-lh-'));
+      try {
+        const { code, stdout, stderr } = await runCli([`http://${host}/`, '--allow-local', host, '--save-lhr', '--out', dir, '--json'], 180_000);
+        expect(code, stderr).toBe(0);
+        const report = JSON.parse(stdout) as AuditReport;
+        const lhrFile = (report.lighthouse as { lhrFile?: string }).lhrFile!;
+        const files = fs.readdirSync(dir).sort();
+        expect(files).toHaveLength(2);
+        expect(files).toContain(lhrFile);
+        expect(files).toContain(lhrFile.replace(/\.lhr\.json$/, '.json'));
+        const lhr = JSON.parse(fs.readFileSync(path.join(dir, lhrFile), 'utf8'));
+        expect(lhr.lighthouseVersion).toBeTruthy();
+        expect(lhr.configSettings.formFactor).toBe('mobile');
+        expect(lhr.audits.metrics.details.items[0].observedLargestContentfulPaint).toBeTypeOf('number');
+        expect(stderr).toContain('LHR i plotë (lokal, mos e shpërndaj pa e kontrolluar)');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     },
     200_000,
   );

@@ -36,6 +36,7 @@ Opsione:
 | `--config <file>` | Config JSON (parazgjedhje `./config.json` nëse ekziston) |
 | `--no-lighthouse` | Pa Lighthouse (më shpejt; raporti del `partial`) |
 | `--chrome-path <path>` | Rruga e Chrome nëse s'gjendet automatikisht |
+| `--save-lhr` | Ruaj edhe LHR-në e plotë të Lighthouse pranë raportit (joaktiv si parazgjedhje; shih më poshtë) |
 | `--ignore-robots` | Anashkalo robots.txt për tool-in — **vetëm për site që i kontrollon vetë** |
 | `--allow-local <host:port>` | **Vetëm për fixtures/teste**: lejo një host lokal |
 | `--json` | Shtyp JSON-in në stdout në vend të përmbledhjes |
@@ -43,6 +44,19 @@ Opsione:
 Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL e pavlefshme/e bllokuar, `3` bllokuar nga robots.txt.
 
 Raporti ruhet si `output/{host}-{YYYYMMDD-HHmmss}.json` (dosja `output/` është në `.gitignore`).
+
+### LHR i plotë (`--save-lhr`)
+
+Me `--save-lhr`, rezultati i plotë i Lighthouse (LHR) ruhet pranë raportit me të njëjtin emër bazë:
+
+```
+output/gjecaj.al-20260928-180745.json      ← raporti
+output/gjecaj.al-20260928-180745.lhr.json  ← LHR i të njëjtit audit
+```
+
+Raporti e emërton skedarin te `lighthouse.lhrFile`. LHR-ja shërben për të verifikuar evidence-n, p.sh. LCP e simuluar kundrejt asaj të vëzhguar. Mund ta hapësh në [Lighthouse Viewer](https://googlechrome.github.io/lighthouse/viewer/), por vetëm pasi ta kesh kontrolluar. Nëse Lighthouse s'jep rezultat (bllokim, `--no-lighthouse`), LHR nuk ruhet dhe CLI e thotë pse.
+
+> ⚠️ **LHR-ja mund të përmbajë të dhëna të faqes që s'duhen shpërndarë pa kontroll:** URL të plota (edhe me query), listën e kërkesave të rrjetit dhe palët e treta, fragmente HTML dhe tekst të elementeve, si dhe screenshot-e të faqes në base64. Mbetet vetëm lokalisht te `output/`, që është jashtë Git. Mos e ngarko dhe mos e ndaj pa e shqyrtuar.
 
 ## Çfarë kontrollon MVP-1
 

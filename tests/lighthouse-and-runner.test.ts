@@ -20,14 +20,20 @@ describe('Lighthouse → performance/accessibility/best-practices (LHR reale e s
     expect(r.limitations.join(' ')).toMatch(/INP: unavailable/);
   });
 
-  it('LCP 3.4s → LCP_NEEDS_IMPROVEMENT me elementin LCP dhe ndarjen si provë', () => {
+  it('LCP 3.4s (simuluar) → LCP_NEEDS_IMPROVEMENT; ndarja etiketohet si e vëzhguar (1487ms), jo si ndarje e 3424ms', () => {
     const r = runPerformance(ctx);
     const lcp = r.issues.find((i) => i.code === 'LCP_NEEDS_IMPROVEMENT')!;
     expect(lcp.severity).toBe('medium');
-    const detected = lcp.evidence[0]!.detected;
-    expect(detected).toContain('LCP=3.4s');
-    expect(detected).toContain('element=<div class="devsite-landing-row-item-description-content">');
-    expect(detected).toMatch(/Time to first byte=935ms/);
+    expect(lcp.evidence[0]!.detected).toBe(
+      'LCP=3424ms, e simuluar nga Lighthouse (Slow 4G, CPU 4x); LCP i vëzhguar në të njëjtin ngarkim pa throttling=1487ms',
+    );
+    expect(lcp.evidence[0]!.detected).not.toMatch(/Time to first byte/);
+    expect(lcp.evidence.map((e) => e.detected).join(' | ')).toContain('div.devsite-landing-row-item-description-content');
+    const bd = lcp.evidence.find((e) => e.detected.startsWith('Ndarja e LCP-së së VËZHGUAR'))!;
+    expect(bd.detected).toContain('Time to first byte=935ms');
+    expect(bd.detected).toContain('shuma=1487ms');
+    expect(bd.detected).toContain('Nuk është ndarje e 3424ms të simuluar');
+    expect(r.metrics.find((m) => m.id === 'lcp-observed')!.value).toBe(1487);
     expect(r.issues.some((i) => i.code === 'TBT_NEEDS_IMPROVEMENT')).toBe(true);
     expect(r.issues.some((i) => i.code.startsWith('CLS'))).toBe(false);
   });

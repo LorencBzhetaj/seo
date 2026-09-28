@@ -40,7 +40,8 @@ export function buildReport(run: AuditRun) {
     tool: { name: 'website-auditor', version: toolVersion(), phase: 'MVP-1' },
     scoringVersion: run.scoringVersion,
     ruleSetVersion: run.ruleSetVersion,
-    lighthouse: lh
+    // lhrFile vendoset nga writeReport vetëm kur LHR-ja ruhet (--save-lhr).
+    lighthouse: { lhrFile: undefined as string | undefined, ...(lh
       ? {
           version: lh.lighthouseVersion,
           formFactor: lh.formFactor,
@@ -52,7 +53,7 @@ export function buildReport(run: AuditRun) {
           finalDisplayedUrl: lh.finalDisplayedUrl,
           blockedRequests: lh.blockedRequests,
         }
-      : { status: ctx?.lighthouse.status, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined },
+      : { status: ctx?.lighthouse.status, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }) },
     runId: run.id,
     url: run.url,
     finalUrl: main?.finalUrl,
@@ -82,9 +83,30 @@ export function reportFileName(report: AuditReport): string {
   return `${host}-${stamp}.json`;
 }
 
-export function writeReport(report: AuditReport, outputDir: string): string {
+/** LHR-ja merr të njëjtin emër bazë si raporti: `gjecaj.al-20260928-180745.json` → `….lhr.json`. */
+export function lhrFileName(report: AuditReport): string {
+  return reportFileName(report).replace(/\.json$/, '.lhr.json');
+}
+
+/**
+ * Shkruan raportin JSON dhe, kur jepet (vetëm me --save-lhr), LHR-në e plotë pranë tij.
+ * Raporti e emërton LHR-në te `lighthouse.lhrFile`, që të dy skedarët të lidhen qartë.
+ */
+export function writeReport(
+  report: AuditReport,
+  outputDir: string,
+  rawLhr?: unknown,
+): { reportPath: string; lhrPath?: string; report: AuditReport } {
   fs.mkdirSync(outputDir, { recursive: true });
-  const file = path.join(outputDir, reportFileName(report));
-  fs.writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  return file;
+  let written = report;
+  let lhrPath: string | undefined;
+  if (rawLhr !== undefined) {
+    const name = lhrFileName(report);
+    lhrPath = path.join(outputDir, name);
+    fs.writeFileSync(lhrPath, JSON.stringify(rawLhr), 'utf8');
+    written = { ...report, lighthouse: { ...report.lighthouse, lhrFile: name } };
+  }
+  const reportPath = path.join(outputDir, reportFileName(written));
+  fs.writeFileSync(reportPath, `${JSON.stringify(written, null, 2)}\n`, 'utf8');
+  return { reportPath, lhrPath, report: written };
 }

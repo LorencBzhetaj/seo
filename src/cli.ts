@@ -19,6 +19,8 @@ Opsione:
   --config <file>         Config JSON (parazgjedhje: ./config.json nëse ekziston)
   --no-lighthouse         Mos ekzekuto Lighthouse (performance/accessibility → skipped)
   --chrome-path <path>    Rruga e Chrome/Chromium për Lighthouse
+  --save-lhr              Ruaj edhe LHR-në e plotë të Lighthouse në dosjen e raporteve
+                          ({raporti}.lhr.json). Mund të përmbajë URL/të dhëna të faqes.
   --ignore-robots         Anashkalo robots.txt për tool-in (vetëm për site që i kontrollon vetë)
   --allow-local <hosts>   VETËM për fixtures/teste: lejo hoste lokale, p.sh. 127.0.0.1:4321
   --json                  Shtyp raportin JSON në stdout në vend të përmbledhjes
@@ -35,6 +37,7 @@ async function main(): Promise<number> {
       'no-lighthouse': { type: 'boolean', default: false },
       'chrome-path': { type: 'string' },
       'ignore-robots': { type: 'boolean', default: false },
+      'save-lhr': { type: 'boolean', default: false },
       'allow-local': { type: 'string' },
       json: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
@@ -58,6 +61,7 @@ async function main(): Promise<number> {
       ...base.lighthouse,
       enabled: values['no-lighthouse'] ? false : base.lighthouse.enabled,
       chromePath: values['chrome-path'] ?? base.lighthouse.chromePath,
+      saveLhr: values['save-lhr'] || base.lighthouse.saveLhr,
     },
   };
 
@@ -75,9 +79,15 @@ async function main(): Promise<number> {
       runLighthouse,
     });
     const report = buildReport(run);
-    const file = writeReport(report, path.resolve(config.outputDir));
-    if (values.json) console.log(JSON.stringify(report, null, 2));
-    else console.log(renderTerminal(report, file));
+    const lh = run.context?.lighthouse;
+    const rawLhr = config.lighthouse.saveLhr && lh?.status === 'ok' ? lh.value.rawLhr : undefined;
+    if (config.lighthouse.saveLhr && !rawLhr) {
+      log(`• --save-lhr: LHR s'u ruajt — Lighthouse s'dha rezultat (${lh?.status === 'error' ? lh.error : lh?.status === 'skipped' ? lh.reason : 'pa rezultat'})`);
+    }
+    const { reportPath: file, lhrPath, report: written } = writeReport(report, path.resolve(config.outputDir), rawLhr);
+    if (lhrPath) log(`• LHR i plotë (lokal, mos e shpërndaj pa e kontrolluar): ${lhrPath}`);
+    if (values.json) console.log(JSON.stringify(written, null, 2));
+    else console.log(renderTerminal(written, file));
     return 0;
   } catch (err) {
     if (err instanceof BlockedUrlError) {

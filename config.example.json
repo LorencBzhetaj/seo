@@ -8,7 +8,8 @@
   "lighthouse": {
     "enabled": true,
     "formFactor": "mobile",
-    "maxWaitForLoad": 45000
+    "maxWaitForLoad": 45000,
+    "saveLhr": false
   },
   "allowedPrivateHosts": [],
   "outputDir": "output"

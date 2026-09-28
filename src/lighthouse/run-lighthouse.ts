@@ -49,6 +49,8 @@ export interface LighthouseData {
   audits: Record<string, LhAudit>;
   /** Kërkesa të browser-it të bllokuara nga guard proxy. */
   blockedRequests: { url: string; reason: string }[];
+  /** LHR i plotë, vetëm kur lighthouse.saveLhr është aktiv. S'futet në raportin JSON. */
+  rawLhr?: unknown;
 }
 
 const CATEGORIES = ['performance', 'accessibility', 'best-practices', 'seo'];
@@ -125,6 +127,7 @@ export async function runLighthouse(url: string, config: AuditConfig): Promise<L
       categories: lhr.categories as unknown as Record<string, LhCategory>,
       audits: lhr.audits as unknown as Record<string, LhAudit>,
       blockedRequests: [...proxy.blocked],
+      rawLhr: config.lighthouse.saveLhr ? lhr : undefined,
     };
   } finally {
     try {

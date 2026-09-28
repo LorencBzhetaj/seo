@@ -99,6 +99,79 @@ function skippedLh(module: string, category: CategoryKey, reason: string): Audit
   return m.build();
 }
 
+// ------------------------------------------------------------------ LCP evidence
+
+/** Toleranca kur krahasohet shuma e fazave me LCP-në (rrumbullakime). */
+const BREAKDOWN_TOLERANCE_MS = 50;
+
+function lhNode(audit: LhAudit | undefined): { lhId?: string; selector?: string; snippet?: string } | undefined {
+  const d = audit?.details;
+  const items = d?.type === 'list' && Array.isArray(d.items) ? (d.items as Item[]) : [];
+  const n = items.find((i) => i.type === 'node') ?? tableItems(audit).find((i) => i.type === 'node');
+  return n ? { lhId: n.lhId as string | undefined, selector: n.selector as string | undefined, snippet: n.snippet as string | undefined } : undefined;
+}
+
+/**
+ * Evidence për LCP pa përzier matje:
+ * - Me throttling "simulate" (parazgjedhja), `largest-contentful-paint` është vlerë e SIMULUAR (Lantern),
+ *   ndërsa `lcp-breakdown-insight` llogaritet nga trace-i i VËZHGUAR pa throttling. Fazat mblidhen në
+ *   `metrics.observedLargestContentfulPaint`, jo në LCP-në e raportuar.
+ * - Ndarja shfaqet vetëm kur shuma e saj përputhet me LCP-në e së njëjtës matje, dhe etiketohet si e vëzhguar.
+ * - Elementi raportohet si i njëjtë vetëm kur breakdown dhe lcp-discovery tregojnë të njëjtën nyje.
+ */
+export function lcpEvidence(lh: LighthouseData, url: string): { evidence: Evidence[]; breakdownMatches: boolean; simulated: boolean } {
+  const A = lh.audits;
+  const lcp = A['largest-contentful-paint']?.numericValue ?? NaN;
+  const simulated = (lh.throttlingMethod ?? 'simulate') === 'simulate';
+  const metricsItem = tableItems(A.metrics)[0];
+  const observed = typeof metricsItem?.observedLargestContentfulPaint === 'number' ? metricsItem.observedLargestContentfulPaint : undefined;
+
+  const bd = A['lcp-breakdown-insight'];
+  const phases = tableItems(bd).filter((i) => typeof i.duration === 'number');
+  const sum = phases.reduce((s, i) => s + (i.duration as number), 0);
+  const phaseText = phases.map((i) => `${i.label ?? i.subpart}=${Math.round(i.duration as number)}ms`).join(', ');
+  // Me simulate, fazat duhet të përputhen me LCP-në e vëzhguar; me devtools/provided, me LCP-në e raportuar.
+  const reference = simulated ? observed : lcp;
+  const breakdownMatches =
+    phases.length > 0 && reference !== undefined && Math.abs(sum - reference) <= Math.max(BREAKDOWN_TOLERANCE_MS, reference * 0.02);
+
+  const bdNode = lhNode(bd);
+  const discNode = lhNode(A['lcp-discovery-insight']);
+  const sameElement = !!bdNode?.lhId && bdNode.lhId === discNode?.lhId;
+  const elementText = bdNode
+    ? `${bdNode.selector ?? ''}${bdNode.snippet ? ` ${bdNode.snippet.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`.trim()
+    : undefined;
+
+  const measurement = simulated ? 'e simuluar nga Lighthouse (Slow 4G, CPU 4x)' : `e matur (throttling ${lh.throttlingMethod})`;
+  const evidence: Evidence[] = [
+    {
+      type: 'metric', url,
+      detected: `LCP=${Math.round(lcp)}ms, ${measurement}${simulated && observed !== undefined ? `; LCP i vëzhguar në të njëjtin ngarkim pa throttling=${Math.round(observed)}ms` : ''}`,
+      expected: `LCP ≤ ${LCP.good}ms`,
+    },
+  ];
+  if (elementText) {
+    evidence.push({
+      type: 'dom', url,
+      detected: `Elementi LCP në trace: ${elementText}${sameElement ? ' (i njëjtë te lcp-breakdown dhe lcp-discovery)' : ' (s\'u konfirmua nga një burim i dytë)'}`,
+    });
+  }
+  if (breakdownMatches) {
+    evidence.push({
+      type: 'metric', url,
+      detected: simulated
+        ? `Ndarja e LCP-së së VËZHGUAR (${Math.round(reference!)}ms, pa throttling): ${phaseText}; shuma=${Math.round(sum)}ms. Nuk është ndarje e ${Math.round(lcp)}ms të simuluar.`
+        : `Ndarja e LCP: ${phaseText}; shuma=${Math.round(sum)}ms = LCP`,
+    });
+  } else if (phases.length > 0) {
+    evidence.push({
+      type: 'metric', url,
+      detected: `Ndarja nga Lighthouse (shuma=${Math.round(sum)}ms) s'u përdor: s'përputhet me LCP-në ${simulated ? `e vëzhguar (${observed !== undefined ? `${Math.round(observed)}ms` : 'mungon në LHR'})` : `e matur (${Math.round(lcp)}ms)`}, ndaj s'dihet që i përket së njëjtës matje.`,
+    });
+  }
+  return { evidence, breakdownMatches, simulated };
+}
+
 // ------------------------------------------------------------------ Performance
 
 export function runPerformance(ctx: AuditContext): AuditResult {
@@ -131,6 +204,14 @@ export function runPerformance(ctx: AuditContext): AuditResult {
   metric('fcp', 'first-contentful-paint', 'FCP', 'ms');
   metric('speed-index', 'speed-index', 'Speed Index', 'ms');
   metric('server-response-time', 'server-response-time', 'TTFB (Lighthouse)', 'ms');
+  const observedLcp = tableItems(A.metrics)[0]?.observedLargestContentfulPaint;
+  m.metric({
+    id: 'lcp-observed', label: 'LCP i vëzhguar (ngarkim pa throttling)', unit: 'ms',
+    value: typeof observedLcp === 'number' ? Math.round(observedLcp) : null,
+    status: typeof observedLcp === 'number' ? 'measured' : 'unavailable',
+    source: 'lighthouse (trace i vëzhguar)',
+    reason: typeof observedLcp === 'number' ? undefined : 'LHR s\'ka metrics.observedLargestContentfulPaint',
+  });
   m.metric(inpMetric());
 
   // LCP
@@ -138,22 +219,17 @@ export function runPerformance(ctx: AuditContext): AuditResult {
   else {
     const issues: IssueDraft[] = [];
     if (lcp > LCP.good) {
-      const breakdown = A['lcp-breakdown-insight'];
-      const parts = tableItems(breakdown).filter((i) => typeof i.duration === 'number').map((i) => `${i.label}=${Math.round(i.duration as number)}ms`);
-      const node = tableItems(breakdown).map(nodeOf).find((n) => n?.snippet);
-      const ev: Evidence[] = [{
-        type: 'metric', url,
-        detected: `LCP=${(lcp / 1000).toFixed(1)}s${node?.snippet ? `, element=${node.snippet.slice(0, 200)}` : ''}${parts.length ? `, ${parts.join(', ')}` : ''}`,
-        expected: `LCP ≤ ${LCP.good / 1000}s`,
-      }];
+      const { evidence, breakdownMatches, simulated } = lcpEvidence(lh, url);
       issues.push({
         code: lcp > LCP.poor ? 'LCP_POOR' : 'LCP_NEEDS_IMPROVEMENT', scope: 'page', url,
         severity: lcp > LCP.poor ? 'high' : 'medium', impact: 'Performance', impactLevel: lcp > LCP.poor ? 'high' : 'medium', effort: 'medium',
         confidence: 0.9, // lab, një ekzekutim
-        message: `LCP ${(lcp / 1000).toFixed(1)}s në mobile (lab)`,
+        message: `LCP ${(lcp / 1000).toFixed(1)}s në mobile (lab${simulated ? ', e simuluar' : ''})`,
         whyItMatters: 'LCP mat sa shpejt shfaqet përmbajtja kryesore; vlera e lartë lidhet me braktisje më të madhe.',
-        fix: 'Shiko ndarjen e LCP (TTFB/load delay/render delay) në evidence: optimizo elementin LCP (madhësia/formati, fetchpriority="high", pa lazy-load), redukto CSS/JS bllokues.',
-        evidence: ev,
+        fix: simulated
+          ? `Vlera ${(lcp / 1000).toFixed(1)}s është vlerësim i Lighthouse për rrjet të ngadaltë mobile (Slow 4G, CPU 4x) mbi ngarkimin e regjistruar; ${breakdownMatches ? 'ndarja në evidence i përket ngarkimit të vëzhguar pa throttling dhe tregon vetëm ku shkoi koha atje, jo shkakun e vlerës së simuluar' : 'Lighthouse s\'jep ndarje për vlerën e simuluar'}. Hapi i parë: verifiko me DevTools → Performance (Slow 4G + CPU 4x) ose me disa ekzekutime, pastaj optimizo elementin LCP (madhësia/formati, fetchpriority="high", pa lazy-load) dhe burimet që bllokojnë render-in.`
+          : 'Optimizo fazën më të gjatë në ndarjen e LCP (evidence): TTFB → cache/server; load delay/duration → zbulim i hershëm dhe madhësi e burimit; render delay → CSS/JS bllokues.',
+        evidence,
       });
     }
     m.check('lcp', 'LCP', 3, issues);

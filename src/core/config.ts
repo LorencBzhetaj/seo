@@ -17,6 +17,8 @@ export interface AuditConfig {
     formFactor: 'mobile';
     maxWaitForLoad: number;
     chromePath?: string;
+    /** Ruaj LHR-në e plotë lokalisht pranë raportit (--save-lhr). Joaktive si parazgjedhje. */
+    saveLhr: boolean;
   };
   /**
    * Hostet private/lokale të lejuara EKSPLICIT (vetëm për fixtures/teste lokale),
@@ -37,6 +39,7 @@ export const DEFAULT_CONFIG: AuditConfig = {
     enabled: true,
     formFactor: 'mobile',
     maxWaitForLoad: 45_000,
+    saveLhr: false,
   },
   allowedPrivateHosts: [],
   outputDir: 'output',
