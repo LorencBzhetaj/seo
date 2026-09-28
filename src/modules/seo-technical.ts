@@ -125,7 +125,10 @@ export function runTechnicalSeo(ctx: AuditContext): AuditResult {
 
   // --- Indexability (meta robots + X-Robots-Tag) ---
   if (!main) m.skip('indexability', 'Indeksueshmëria (noindex)', 4, 'Faqja hyrëse s\'u mor');
-  else {
+  // Header-at e një përgjigjeje 403/5xx s'thonë asgjë për indeksueshmërinë e faqes reale.
+  else if (ctx.access.state !== 'ok') {
+    m.skip('indexability', 'Indeksueshmëria (noindex)', 4, `${ctx.access.summary} Header-at/HTML e faqes reale s'u morën.`);
+  } else {
     const issues: IssueDraft[] = [];
     const evidence: IssueDraft['evidence'] = [];
     for (const meta of html?.robotsMeta ?? []) {
@@ -170,6 +173,9 @@ export function runTechnicalSeo(ctx: AuditContext): AuditResult {
           evidence: [{ type: 'http', url: r.url, detected: `HTTP ${r.httpStatus}`, expected: 'HTTP 200 ose 404' }],
         },
       ]);
+    } else if (r.httpStatus === 401 || r.httpStatus === 403 || r.httpStatus === 429) {
+      // Refuzim për këtë klient ≠ "robots.txt nuk ekziston": s'dimë çfarë shohin crawler-at.
+      m.skip('robots-txt', 'robots.txt', 3, `robots.txt ktheu HTTP ${r.httpStatus} për klientin e auditimit; përmbajtja reale s'dihet`);
     } else if (!r.found) {
       m.info('robots-txt', 'robots.txt', [
         `robots.txt nuk ekziston (HTTP ${r.httpStatus}). Sipas RFC 9309 kjo do të thotë "lejo gjithçka" — nuk është problem.`,
@@ -210,6 +216,10 @@ export function runTechnicalSeo(ctx: AuditContext): AuditResult {
     reason: typeof lhSeo === 'number' ? undefined : 'Lighthouse s\'u ekzekutua',
   });
   m.limitations.push('SEO teknik i vlerësuar vetëm për faqen hyrëse (pa crawl) dhe mbi HTML-në e shërbyer (jo pas JavaScript).');
+  if (ctx.access.state !== 'ok') {
+    // Pa HTML-në reale s'ka score SEO — as 100 "partial" nga robots.txt vetëm.
+    return m.build({ score: null, reason: `HTML-ja reale nuk u mor: ${ctx.access.summary}` });
+  }
   return m.build();
 }
 

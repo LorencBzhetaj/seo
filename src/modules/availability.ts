@@ -1,5 +1,6 @@
 import type { AuditContext } from '../core/context.js';
-import type { AuditResult, IssueDraft } from '../core/schemas.js';
+import { accessEvidenceText } from '../core/access.js';
+import type { AuditResult, Evidence, IssueDraft } from '../core/schemas.js';
 import { ModuleBuilder } from './helpers.js';
 
 const TTFB_OK_MS = 800;
@@ -45,6 +46,42 @@ export function runAvailability(ctx: AuditContext): AuditResult {
   }
 
   const res = main.value;
+  const access = ctx.access;
+  const otherClients = otherClientEvidence(ctx);
+
+  if (access.state === 'blocked') {
+    // Refuzim për KËTË klient (IP/IPv6/VPN/WAF/bot protection). S'është provë mosdisponueshmërie
+    // për vizitorët: s'jep score dhe s'aktivizon kufizimin e critical derisa të verifikohet.
+    const provider = access.provider ?? 'serveri';
+    m.info('http-status', 'Status HTTP i faqes hyrëse', [access.summary], [
+      {
+        code: 'HOMEPAGE_ACCESS_DENIED',
+        scope: 'site',
+        url: res.finalUrl,
+        severity: 'high',
+        impact: 'I pasigurt: bllokim i klientit të auditimit; kritik vetëm nëse prek vizitorë realë ose Googlebot',
+        impactLevel: 'high',
+        effort: 'low',
+        confidence: 0.4,
+        message: `Faqja hyrëse ktheu HTTP ${res.status} për kërkesën e auditimit (${provider}) — kërkon verifikim`,
+        whyItMatters:
+          'Kërkesa automatike u refuzua. Shkaku mund të jetë specifik për këtë klient (IP/IPv6, VPN si WARP, rregull WAF, bot protection ose firewall i hostingut) dhe jo mosdisponueshmëri për të gjithë. Nëse i njëjti rregull bllokon vizitorë realë ose Googlebot, ndikimi bëhet kritik.',
+        fix:
+          access.provider === 'Cloudflare'
+            ? `1) Hape faqen në browser nga i njëjti rrjet dhe kontrollo https://${new URL(res.finalUrl).host}/cdn-cgi/trace (ip, warp). 2) Te Cloudflare → Security → Events kërko Ray ID ${access.requestId ?? '(shih evidence)'}: nëse ka event, shiko cili rregull e bllokoi. Mungesa e eventit vetëm s'provon që 403 vjen nga hostingu; kontrollo edhe log-et e serverit/firewall-it dhe krahaso IPv4 me IPv6 (curl -4 / curl -6). 3) Verifiko që Googlebot s'bllokohet (Search Console → URL Inspection).`
+            : '1) Hape faqen në browser nga i njëjti rrjet. 2) Kontrollo log-et e WAF/CDN-së dhe të serverit për këtë kërkesë. 3) Verifiko që Googlebot s\'bllokohet (Search Console → URL Inspection).',
+        evidence: [
+          { type: 'http', url: res.finalUrl, detected: accessEvidenceText(access), expected: 'HTTP 200 me HTML-në e faqes' },
+          ...otherClients,
+        ],
+      },
+    ]);
+    m.skip('response-time', 'Koha e përgjigjes (TTFB)', 1, `TTFB i përgjigjes ${res.status} s'përfaqëson faqen reale`);
+    m.skip('redirect-chain', 'Zinxhiri i ridrejtimeve', 1, 'Faqja reale s\'u arrit');
+    m.metric({ id: 'http-status', label: 'HTTP status', value: res.status, status: 'measured', source: 'fetch' });
+    return m.build({ score: null, reason: `Qasja u bllokua për këtë klient (HTTP ${res.status}); disponueshmëria reale s'u mat` });
+  }
+
   const statusIssues: IssueDraft[] = [];
   if (res.status >= 400) {
     statusIssues.push({
@@ -57,8 +94,8 @@ export function runAvailability(ctx: AuditContext): AuditResult {
       effort: 'medium',
       message: `Faqja hyrëse kthen HTTP ${res.status}`,
       whyItMatters: 'Një status 4xx/5xx te faqja hyrëse do të thotë që përmbajtja s\'shërbehet dhe s\'indeksohet.',
-      fix: res.status >= 500 ? 'Kontrollo logs e serverit/aplikacionit për gabimin 5xx.' : 'Sigurohu që URL-ja hyrëse shërbehet me 200 (routing, rregulla WAF/bot-protection).',
-      evidence: [{ type: 'http', url: res.finalUrl, detected: `HTTP ${res.status} ${res.statusText}`, expected: 'HTTP 200' }],
+      fix: res.status >= 500 ? 'Kontrollo logs e serverit/aplikacionit për gabimin 5xx.' : 'Sigurohu që URL-ja hyrëse ekziston dhe shërbehet me 200 (routing, deploy, rregulla ridrejtimi).',
+      evidence: [{ type: 'http', url: res.finalUrl, detected: accessEvidenceText(access), expected: 'HTTP 200' }, ...otherClients],
     });
   } else if (res.status >= 300) {
     statusIssues.push({
@@ -130,4 +167,17 @@ export function runAvailability(ctx: AuditContext): AuditResult {
   m.metric({ id: 'content-encoding', label: 'Content-Encoding', value: res.headers['content-encoding'] ?? 'asnjë', status: 'measured', source: 'fetch' });
   if (res.bodyTruncated) m.limitations.push(`HTML u shkurtua te ${ctx.config.maxResponseBytes} bytes; analiza bazohet në pjesën e marrë.`);
   return m.build();
+}
+
+/** Çfarë panë klientët e tjerë të auditimit (robots.txt, http://, Chrome i Lighthouse) — ndihmon diagnozën. */
+function otherClientEvidence(ctx: AuditContext): Evidence[] {
+  const ev: Evidence[] = [];
+  if (ctx.robots.status === 'ok') {
+    ev.push({ type: 'http', url: ctx.robots.value.url, detected: `robots.txt: HTTP ${ctx.robots.value.httpStatus} për të njëjtin klient` });
+  }
+  if (ctx.lighthouse.status === 'error') {
+    const code = /Status code: (\d{3})/.exec(ctx.lighthouse.error)?.[1];
+    if (code) ev.push({ type: 'network', url: ctx.url, detected: `Chrome headless i Lighthouse (nga e njëjta makinë/rrjet) mori gjithashtu HTTP ${code}` });
+  }
+  return ev;
 }

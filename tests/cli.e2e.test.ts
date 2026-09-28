@@ -26,6 +26,10 @@ beforeAll(async () => {
         `<!doctype html><html lang="en"><head><title>Leaky page test</title></head><body><h1>x</h1><img src="http://localhost:${port}/pixel.png" alt="p"><script>fetch('http://169.254.169.254/latest/meta-data/').catch(()=>{})</script></body></html>`,
       );
     }
+    if (req.url === '/blocked/') {
+      // Imiton përgjigjen reale të gjecaj.al përmes IPv6/WARP
+      return void res.writeHead(403, { 'content-type': 'text/plain', server: 'cloudflare', 'cf-ray': 'test-ray-SOF' }).end('Access denied\n');
+    }
     if (req.url === '/style.css') return void res.writeHead(200, { 'content-type': 'text/css' }).end('body{font-family:sans-serif}');
     res.writeHead(404).end();
   });
@@ -93,6 +97,27 @@ describe('CLI mbi server lokal (fixture)', () => {
     expect(stdout).toContain('SEO (Technical)');
     expect(stdout).toMatch(/skipped: Lighthouse u çaktivizua/);
     expect(stdout).toContain('Raporti JSON:');
+  });
+
+  it('faqja kthen 403: raport i qartë "bllokuar për këtë klient", pa SEO 100 dhe pa rekomandime header-ash', async () => {
+    const json = await runCli([`http://${host}/blocked/`, '--allow-local', host, '--no-lighthouse', '--out', outDir, '--json']);
+    expect(json.code, json.stderr).toBe(0);
+    const report = JSON.parse(json.stdout) as AuditReport;
+    expect(report.access).toMatchObject({ state: 'blocked', httpStatus: 403, provider: 'Cloudflare', requestId: 'test-ray-SOF', bodySnippet: 'Access denied' });
+    expect(report.categories.seoTechnical).toBeNull();
+    expect(report.categories.security).toBeNull();
+    expect(report.categories.availability).toBeNull();
+    expect(report.health!.critical).toBe(0);
+    // Serveri i testit është http://, prandaj NOT_HTTPS (fakt protokolli) mbetet; asnjë rekomandim header-ash.
+    expect(report.issues.map((i) => i.code).sort()).toEqual(['HOMEPAGE_ACCESS_DENIED', 'NOT_HTTPS']);
+    expect(report.issues.find((i) => i.code === 'HOMEPAGE_ACCESS_DENIED')!.needsManualReview).toBe(true);
+    expect(report.limitations[0]).toMatch(/bllokua për këtë klient/);
+
+    const text = await runCli([`http://${host}/blocked/`, '--allow-local', host, '--no-lighthouse', '--out', outDir]);
+    expect(text.stdout).toContain('AUDITI U BLLOKUA PËR KËTË KLIENT — HTTP 403');
+    expect(text.stdout).toContain('Ray/ID test-ray-SOF');
+    expect(text.stdout).not.toMatch(/SEO (Technical)s+100/);
+    expect(text.stdout).not.toContain('MISSING_');
   });
 
   it('host lokal pa --allow-local refuzohet (exit 2)', async () => {

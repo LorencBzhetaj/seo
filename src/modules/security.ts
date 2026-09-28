@@ -1,5 +1,6 @@
 import type { AuditContext } from '../core/context.js';
 import type { AuditResult, Evidence, IssueDraft } from '../core/schemas.js';
+import { isSuccess } from '../core/access.js';
 import { ModuleBuilder } from './helpers.js';
 
 const HSTS_MIN_AGE = 15_552_000; // 180 ditë
@@ -61,7 +62,7 @@ export function runSecurity(ctx: AuditContext): AuditResult {
   else if (ctx.httpVariant.status === 'ok') {
     const v = ctx.httpVariant.value;
     const issues: IssueDraft[] = [];
-    if (!v.finalUrl.startsWith('https:')) {
+    if (!v.finalUrl.startsWith('https:') && isSuccess(v.status)) {
       issues.push({
         code: 'HTTP_NOT_REDIRECTED', scope: 'site', url: v.requestedUrl, severity: 'medium', impact: 'Security/SEO mesatar', impactLevel: 'medium', effort: 'low',
         message: 'Versioni http:// nuk ridrejton te https://',
@@ -70,7 +71,12 @@ export function runSecurity(ctx: AuditContext): AuditResult {
         evidence: [{ type: 'http', url: v.requestedUrl, detected: `HTTP ${v.status} në ${v.finalUrl} pa ridrejtim te https`, expected: '301 → https://…' }],
       });
     }
-    m.check('http-redirect', 'http → https', 2, issues, issues.length ? undefined : [`${v.requestedUrl} → ${v.finalUrl} (${v.redirects.map((r) => r.status).join('→')})`]);
+    if (!v.finalUrl.startsWith('https:') && !isSuccess(v.status)) {
+      // p.sh. http:// ktheu 403 për këtë klient: s'dimë nëse vizitorët ridrejtohen.
+      m.skip('http-redirect', 'http → https', 2, `http:// ktheu HTTP ${v.status} pa ridrejtim; sjellja për vizitorët s'dihet`);
+    } else {
+      m.check('http-redirect', 'http → https', 2, issues, issues.length ? undefined : [`${v.requestedUrl} → ${v.finalUrl} (${v.redirects.map((r) => r.status).join('→')})`]);
+    }
   } else if (ctx.httpVariant.status === 'error' && ['NETWORK', 'TIMEOUT'].includes(ctx.httpVariant.code ?? '')) {
     m.info('http-redirect', 'http → https', [`Porti 80 nuk përgjigjet (${ctx.httpVariant.error}); http s'shërben përmbajtje — s'është problem.`]);
   } else {
@@ -78,6 +84,20 @@ export function runSecurity(ctx: AuditContext): AuditResult {
   }
 
   runTlsCheck(ctx, m, pageUrl, isHttps);
+
+  if (ctx.access.state !== 'ok') {
+    // Header-at dhe HTML-ja janë të përgjigjes së bllokimit/gabimit, jo të faqes reale:
+    // mungesa e tyre s'raportohet si rekomandim.
+    const reason = `Header-at i përkasin përgjigjes HTTP ${res.status}, jo faqes reale`;
+    for (const [id, label, w] of [
+      ['mixed-content', 'Mixed content', 2], ['hsts', 'HSTS', 2], ['csp', 'Content-Security-Policy', 1],
+      ['frame-protection', 'Mbrojtje nga framing', 1], ['x-content-type-options', 'X-Content-Type-Options', 1],
+      ['referrer-policy', 'Referrer-Policy', 0.5], ['version-disclosure', 'Zbulim versioni në header', 0.5],
+    ] as const) {
+      m.skip(id, label, w, reason);
+    }
+    return m.build({ score: null, reason: `Faqja reale s'u mor (${ctx.access.summary}); u vlerësuan vetëm HTTPS dhe TLS` });
+  }
 
   // --- Mixed content ---
   if (!isHttps) m.notApplicable('mixed-content', 'Mixed content', 'Faqja s\'shërbehet me HTTPS');

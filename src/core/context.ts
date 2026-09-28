@@ -5,6 +5,7 @@ import { assertUrlAllowed, BlockedUrlError, normalizeInputUrl } from '../net/url
 import { isAllowed, parseRobots, type ParsedRobots } from '../parse/robots.js';
 import { parseHtml, type ParsedHtml } from '../parse/html.js';
 import type { LighthouseData } from '../lighthouse/run-lighthouse.js';
+import { classifyAccess, isSuccess, type AccessInfo } from './access.js';
 
 /** Rezultat i një mbledhjeje të dhënash: ok, gabim (me kod), ose e anashkaluar me arsye. */
 export type Probe<T> =
@@ -25,6 +26,8 @@ export interface AuditContext {
   config: AuditConfig;
   robots: Probe<RobotsData>;
   main: Probe<FetchResult>;
+  /** A u mor faqja reale (2xx), apo u bllokua / ktheu gabim për këtë klient. */
+  access: AccessInfo;
   html: Probe<ParsedHtml>;
   httpVariant: Probe<FetchResult>;
   tls: Probe<TlsInfo>;
@@ -111,8 +114,11 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
     // Host ose ridrejtim drejt adrese lokale/private: auditi ndalet, s'raportohet si "site down".
     throw new BlockedUrlError(main.error, url.href);
   }
+  const access = classifyAccess(main);
   let html: Probe<ParsedHtml>;
   if (main.status !== 'ok') html = { status: 'skipped', reason: `Faqja hyrëse s'u mor: ${main.status === 'error' ? main.error : ''}` };
+  // Faqja e bllokimit/gabimit (edhe kur është HTML) s'është faqja reale — s'analizohet si e tillë.
+  else if (!isSuccess(main.value.status)) html = { status: 'skipped', reason: `${access.summary} HTML-ja reale nuk u mor.` };
   else if (!isHtml(main.value)) html = { status: 'skipped', reason: `Përgjigja s'është HTML (content-type: ${main.value.headers['content-type'] ?? 'mungon'})` };
   else html = await probe(async () => parseHtml(main.value.body, main.value.finalUrl));
 
@@ -159,5 +165,5 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
     lighthouse = await probe(() => hooks.runLighthouse!(url.href, config));
   }
 
-  return { url: url.href, config, robots, main, html, httpVariant, tls, canonicalTarget, lighthouse };
+  return { url: url.href, config, robots, main, access, html, httpVariant, tls, canonicalTarget, lighthouse };
 }

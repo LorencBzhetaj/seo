@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyAccess, isSuccess } from '../src/core/access.js';
 import { DEFAULT_CONFIG } from '../src/core/config.js';
 import type { AuditContext, Probe, RobotsData } from '../src/core/context.js';
 import type { FetchResult } from '../src/net/safe-fetch.js';
@@ -48,7 +49,12 @@ export function makeCtx(o: CtxOptions = {}): AuditContext {
   const body = o.html ?? fixture('good.html');
   const main: Probe<FetchResult> =
     o.main ?? { status: 'ok', value: fetchResult({ finalUrl: url, requestedUrl: url, body, headers: { 'content-type': 'text/html', ...(o.headers ?? {}) } }) };
-  const html = main.status === 'ok' ? { status: 'ok' as const, value: parseHtml(main.value.body, main.value.finalUrl) } : { status: 'skipped' as const, reason: 'Faqja hyrëse s\'u mor' };
+  const access = classifyAccess(main);
+  // Njësoj si collectContext: vetëm një përgjigje 2xx analizohet si faqja reale.
+  const html =
+    main.status === 'ok' && isSuccess(main.value.status)
+      ? { status: 'ok' as const, value: parseHtml(main.value.body, main.value.finalUrl) }
+      : { status: 'skipped' as const, reason: `${access.summary} HTML-ja reale nuk u mor.` };
   const robotsStatus = o.robotsStatus ?? (o.robotsTxt === null ? 404 : 200);
   const robots: Probe<RobotsData> = {
     status: 'ok',
@@ -64,6 +70,7 @@ export function makeCtx(o: CtxOptions = {}): AuditContext {
     config: { ...DEFAULT_CONFIG },
     robots,
     main,
+    access,
     html,
     httpVariant: o.httpVariant ?? { status: 'ok', value: fetchResult({ requestedUrl: 'http://example.com/', finalUrl: url, redirects: [{ url: 'http://example.com/', status: 301, location: url }] }) },
     tls: o.tls ?? { status: 'ok', value: { host: 'example.com', authorized: true, daysRemaining: 80, validTo: '2026-12-17T00:00:00.000Z', issuer: 'Test CA' } },

@@ -85,10 +85,10 @@ describe('SEO teknik', () => {
       expect(check(r, id).status).toBe('skipped');
       expect(check(r, id).reason).toBeTruthy();
     }
-    // robots.txt u lexua, ndaj moduli ka rezultat të pjesshëm
-    expect(r.partial).toBe(true);
-    expect(r.score).toBe(100);
-    expect(r.limitations.join(' ')).toMatch(/skipped/);
+    // robots.txt u lexua, por pa HTML-në reale s'ka score SEO (jo 100 "partial")
+    expect(r.score).toBeNull();
+    expect(r.status).toBe('skipped');
+    expect(r.reason).toMatch(/HTML-ja reale nuk u mor/);
   });
 });
 

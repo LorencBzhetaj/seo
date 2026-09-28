@@ -30,6 +30,15 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
 
   out.push(`┌${line}┐`);
   out.push(` WEBSITE AUDIT — ${bold(host)}  ${dim(`(MVP-1, faqja hyrëse, mobile)`)}`);
+  const access = report.access;
+  if (access && access.state !== 'ok' && access.state !== 'unreachable') {
+    out.push('');
+    out.push(` ${red(bold(access.state === 'blocked' ? `⚠ AUDITI U BLLOKUA PËR KËTË KLIENT — HTTP ${access.httpStatus}` : `⚠ FAQJA HYRËSE KTHEU HTTP ${access.httpStatus}`))}`);
+    const via = [access.provider, access.requestId ? `Ray/ID ${access.requestId}` : '', access.ipVersion ? `IPv${access.ipVersion}` : ''].filter(Boolean).join(' · ');
+    if (via) out.push(`   ${via}${access.bodySnippet ? ` · "${truncate(access.bodySnippet, 40)}"` : ''}`);
+    out.push(yellow("   HTML-ja dhe header-at e faqes reale s'u morën: SEO dhe header-at e sigurisë s'janë vlerësuar."));
+    if (access.state === 'blocked') out.push(yellow("   Kjo s'provon që faqja s'hapet për vizitorët — verifiko në browser dhe te log-et e WAF/CDN."));
+  }
   out.push('');
   if (h?.score !== null && h?.score !== undefined) {
     out.push(`    ${bold(`${h.score} / 100`)}  — ${h.status}`);

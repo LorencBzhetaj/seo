@@ -29,6 +29,7 @@ export function buildReport(run: AuditRun) {
   const lh = ctx?.lighthouse.status === 'ok' ? ctx.lighthouse.value : undefined;
   const main = ctx?.main.status === 'ok' ? ctx.main.value : undefined;
   const limitations = [
+    ...(ctx && ctx.access.state !== 'ok' ? [ctx.access.summary] : []),
     ...(run.health?.limitations ?? []),
     ...run.results.flatMap((r) => r.limitations),
     'Ky raport mbulon vetëm faqen hyrëse (MVP-1): pa crawl, pa formularë, pa exposure probing, pa AI. Nuk vërteton pajtueshmëri ligjore, siguri apo aksesueshmëri të plotë.',
@@ -55,6 +56,8 @@ export function buildReport(run: AuditRun) {
     runId: run.id,
     url: run.url,
     finalUrl: main?.finalUrl,
+    /** A e mori auditi faqen reale; nëse jo, çfarë u përgjigj dhe pse rezultatet janë të pjesshme. */
+    access: ctx?.access,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
     status: run.status === 'completed' && (run.health?.status === 'PARTIAL' || partialModules.length) ? 'partial' : run.status,
