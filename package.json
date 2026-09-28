@@ -1,0 +1,32 @@
+{
+  "name": "website-auditor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Website Audit & Improvement Engine — MVP-1 (CLI lokal)",
+  "type": "module",
+  "bin": {
+    "website-audit": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "audit": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:lighthouse": "cross-env RUN_LIGHTHOUSE_TESTS=1 vitest run tests/cli.e2e.test.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "chrome-launcher": "^1.2.1",
+    "lighthouse": "^13.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9",
+    "vitest": "^5.0.2"
+  }
+}

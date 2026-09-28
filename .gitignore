@@ -1,0 +1,15 @@
+# Varësitë dhe build
+node_modules/
+dist/
+
+# Raportet, screenshots dhe logs mbeten lokale (§13)
+output/
+screenshots/
+*.log
+lighthouse.*/
+
+# Sekretet vetëm në env lokal
+.env
+.env.*
+!.env.example
+config.local.json

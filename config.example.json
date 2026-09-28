@@ -1,0 +1,15 @@
+{
+  "timeout": 10000,
+  "maxResponseBytes": 5242880,
+  "maxRedirects": 5,
+  "requestDelay": 500,
+  "userAgent": "WebsiteAuditor/0.1 (personal local audit; MVP-1)",
+  "respectRobots": true,
+  "lighthouse": {
+    "enabled": true,
+    "formFactor": "mobile",
+    "maxWaitForLoad": 45000
+  },
+  "allowedPrivateHosts": [],
+  "outputDir": "output"
+}
