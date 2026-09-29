@@ -593,13 +593,18 @@ Conversion Audit (CTA, contact, forms në SAFE mode) + Privacy/GDPR + Page Type 
 - Për kodin që kërkon build/server/renderim: `skipped` me arsye. **Pa Health Score dhe pa Lighthouse**, sepse kodi s'ekzekutohet.
 - `--repo`: klon i cekët i përkohshëm i një repo publike https, pa skripte, hooks, LFS apo kredenciale, me kufi madhësie dhe kohe; repo private kërkojnë konfigurim të veçantë.
 
-**Faza e radhës (e planifikuar, ende pa implementim) — Cilësia e përmbajtjes dhe pamja gjenerike ("AI slop")**
+**Faza pas auditit të skedarëve — Cilësia e përmbajtjes dhe identiteti vizual ("AI slop")**
+*Statusi: implementuar, në pritje të shqyrtimit. Jashtë Health Score-it derisa të kalibrohet.*
 Sinjale, **jo provë autorësie**:
-- tekst gjenerik ose i përsëritur (fraza shabllon, pretendime pa prova, përmbajtje "e mbushur");
-- mungesë detajesh specifike (emra, vende, çmime, orare);
-- dizajn/template i pandryshuar (stock images, seksione identike me temën bazë, placeholder-a të mbetur).
+- Kodi:
+  - `src/quality/` (text, visual, signals): analizë e pastër, pa rrjet;
+  - `src/visual/` (capture me puppeteer-core përmes guard proxy-t, probe në faqe);
+  - `src/modules/quality/`: kategoritë `contentQuality` dhe `visualIdentity`, seksioni `quality`, status `info`/`skipped`, pa score.
+- Teksti: blloqe të përsëritura mes faqeve (shablloni ≥ 60% përjashtohet), fraza gjenerike pa detaje konkrete, titull ↔ përmbajtje, linke/CTA të përsëritura pa kontekst. Header/footer ndahen nga përmbajtja. Gjuhët krahasohen veç e veç.
+- Pamja: desktop + mobile në ≤ 4 faqe përfaqësuese (max 8), me screenshot-e lokale si evidence: overflow mobile, placeholder/stock, hero i përsëritur, karta ikonash uniforme, gradient i përsëritur, layout identik mes llojeve të faqeve. Pamja që s'renderohet → `skipped` me arsye.
+- `--folder`/`--repo`: vetëm teksti (skedar + rresht). Pamja `skipped`, sepse s'ekzekutohet kodi i projektit.
 
-Çdo sinjal me confidence të ulët dhe verifikim manual. Pa verdikt "e shkruar nga AI". Gjykimi vizual (Claude vision) mbetet te MVP-4. Pas saj: dashboard-i lokal.
+Çdo sinjal ka confidence të ulët dhe kërkon verifikim manual. Pa verdikt "e shkruar nga AI". Gjykimi vizual me model (Claude vision) mbetet te MVP-4. Faza e radhës: dashboard-i lokal.
 
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).

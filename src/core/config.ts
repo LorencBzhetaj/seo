@@ -46,6 +46,14 @@ export interface AuditConfig {
   business: {
     enabled: boolean;
   };
+  /** Cilësia e përmbajtjes dhe identiteti vizual (jashtë Health Score-it). */
+  quality: {
+    enabled: boolean;
+    /** Renderim në browser (desktop + mobile) i faqeve përfaqësuese. */
+    visual: boolean;
+    /** Sa faqe renderohen (maks. 8). */
+    maxVisualPages: number;
+  };
   /** Auditi i skedarëve (--folder/--repo): kufijtë e leximit dhe të klonimit. */
   source: {
     maxFiles: number;
@@ -90,6 +98,11 @@ export const DEFAULT_CONFIG: AuditConfig = {
   business: {
     enabled: true,
   },
+  quality: {
+    enabled: true,
+    visual: true,
+    maxVisualPages: 4,
+  },
   source: {
     maxFiles: 5000,
     maxFileBytes: 2 * 1024 * 1024,
@@ -116,6 +129,7 @@ export function loadConfig(configPath?: string, overrides: Partial<AuditConfig> 
     crawl: { ...DEFAULT_CONFIG.crawl, ...(fileConfig.crawl ?? {}), ...(overrides.crawl ?? {}) },
     business: { ...DEFAULT_CONFIG.business, ...(fileConfig.business ?? {}), ...(overrides.business ?? {}) },
     source: { ...DEFAULT_CONFIG.source, ...(fileConfig.source ?? {}), ...(overrides.source ?? {}) },
+    quality: { ...DEFAULT_CONFIG.quality, ...(fileConfig.quality ?? {}), ...(overrides.quality ?? {}) },
     lighthouse: {
       ...DEFAULT_CONFIG.lighthouse,
       ...(fileConfig.lighthouse ?? {}),

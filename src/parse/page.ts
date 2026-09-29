@@ -1,6 +1,19 @@
 import * as cheerio from 'cheerio';
 import { extractBusinessSignals, type BusinessSignals } from './business.js';
+import { accessibleName, entityContext, type NameSource } from './context.js';
 import { parseHtml, parseXRobotsTag, snippet, type ParsedHtml } from './html.js';
+
+export interface GenericLink {
+  /** Teksti i dukshëm. */
+  text: string;
+  /** Emri i aksesueshëm dhe burimi i tij (teksti, aria-label…). */
+  name: string;
+  nameSource: NameSource;
+  href?: string;
+  region: 'header' | 'footer' | 'main';
+  /** Titulli/teksti i kartës ose koka e kolonës që e dallon; mungon kur s'gjendet. */
+  context?: string;
+}
 
 export interface PageLink {
   /** URL absolute (pa #fragment); linket jo-http(s) s'ruhen. */
@@ -27,9 +40,20 @@ export interface PageData extends ParsedHtml {
   cfEmailLinks: { count: number; decoderScript: boolean; sample?: string };
   /** Sinjale biznesi/privatësie nga HTML-ja statike (MVP-3). */
   business: BusinessSignals;
+  /**
+   * Blloqe teksti të përmbajtjes kryesore (p, li, h2–h4, blockquote…), pa header/nav/footer/aside/form,
+   * për krahasim mes faqeve (cilësia e përmbajtjes). Vetëm blloqe me ≥ 6 fjalë, unikë brenda faqes.
+   */
+  contentBlocks: { tag: string; text: string }[];
+  /** Linke/butona me tekst të përgjithshëm ("Read more", "Mëso më shumë"…), me rajonin. */
+  /** Linke/butona me tekst të përgjithshëm, me emrin e aksesueshëm dhe kontekstin dallues (titulli i kartës…). */
+  genericLinks: GenericLink[];
   /** Identifikues i template-it (klasat e body pa ID, ose skeleti i DOM-it), për grupimin e issue-ve. */
   templateKey: string;
 }
+
+/** Tekst linku që s'thotë ku të çon (EN/SQ/IT/DE). */
+const GENERIC_LINK_TEXT = /^(read more|learn more|more|click here|here|see more|discover more|find out more|view more|details|lexo më shumë|mëso më shumë|më shumë|kliko këtu|këtu|shiko më shumë|zbulo më shumë|detaje|scopri di più|leggi di più|mehr erfahren|weiterlesen)[\s.…→›»>]*$/i;
 
 function clean(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
@@ -135,6 +159,19 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
   // MVP-3: para heqjes së script/iframe/footer (tracker-at, CMP-të dhe linket e politikave janë aty).
   const business = extractBusinessSignals($, pageUrl, baseUrl, fnv1a);
 
+  // Tekste linkesh të përgjithshme, me rajonin (para heqjes së header/footer).
+  const genericLinks: PageData['genericLinks'] = [];
+  $('a, button').each((_, el) => {
+    const t = clean($(el).text());
+    if (!GENERIC_LINK_TEXT.test(t) || genericLinks.length >= 100) return;
+    // Emri i aksesueshëm përshkrues (aria-label, aria-labelledby) e zgjidh paqartësinë: s'ka ç'të raportohet.
+    const acc = accessibleName($, el);
+    if (acc.name && !GENERIC_LINK_TEXT.test(acc.name)) return;
+    const region = $(el).closest('footer, [role="contentinfo"]').length ? 'footer' : $(el).closest('header, nav, [role="banner"], [role="navigation"]').length ? 'header' : 'main';
+    const context = entityContext($, el, (x) => x.toLowerCase() === t.toLowerCase());
+    genericLinks.push({ text: t, name: acc.name || t, nameSource: acc.source, href: $(el).attr('href') ?? undefined, region, ...(context ? { context } : {}) });
+  });
+
   // iframe-t regjistrohen para heqjes: përmbajtja mund të jetë brenda tyre (p.sh. menu e jashtme).
   const iframes = $('iframe[src]').map((_, el) => $(el).attr('src') ?? '').get().filter(Boolean).slice(0, 5);
 
@@ -151,6 +188,16 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
     .sort((a, b) => b.words - a.words);
   const best = candidates.find((c) => c.words >= Math.max(50, bodyWords * 0.3));
   const mainText = best ? best.text : bodyText;
+  // Blloqet e përmbajtjes kryesore (template-i header/nav/footer/aside është hequr më lart).
+  const contentBlocks: PageData['contentBlocks'] = [];
+  const seenBlocks = new Set<string>();
+  $('body').find('p, li, h2, h3, h4, blockquote, dd, figcaption').each((_, el) => {
+    if ($(el).find('p, li').length) return; // vetëm blloqe "gjethe", që teksti të mos numërohet dy herë
+    const text = clean($(el).text());
+    if (words(text) < 6 || seenBlocks.has(text) || contentBlocks.length >= 300) return;
+    seenBlocks.add(text);
+    contentBlocks.push({ tag: (el as { tagName?: string }).tagName ?? 'p', text: text.slice(0, 600) });
+  });
   const wordCount = best ? best.words : bodyWords;
 
   const metaNoindex = base.robotsMeta.some((m) => m.content.split(',').map((d) => d.trim()).some((d) => d === 'noindex' || d === 'none'));
@@ -167,6 +214,8 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
     iframes,
     noindex: metaNoindex || headerNoindex,
     business,
+    contentBlocks,
+    genericLinks,
     cfEmailLinks: { count: cfEmailCount, decoderScript: cfDecoder, sample: cfEmailSample },
     templateKey,
   };

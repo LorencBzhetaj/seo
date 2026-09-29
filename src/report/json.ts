@@ -3,13 +3,15 @@ import path from 'node:path';
 import type { AuditRun } from '../core/run.js';
 import type { AuditResult } from '../core/schemas.js';
 import { buildBusinessSection } from './business.js';
+import { buildQualitySection } from './quality.js';
 import { buildSiteSection } from './site.js';
 
 /**
  * 2: shtohet seksioni `site` (MVP-2). 3: shtohet seksioni `business` (MVP-3: detektim, conversion, privacy).
+ * 4: shtohet seksioni `quality` (cilësia e përmbajtjes, identiteti vizual; sinjale pa score).
  * `health`/`categories`/`issues` mbeten të faqes hyrëse.
  */
-export const REPORT_SCHEMA_VERSION = '3';
+export const REPORT_SCHEMA_VERSION = '4';
 
 function toolVersion(): string {
   try {
@@ -83,6 +85,8 @@ export function buildReport(run: AuditRun) {
     site: buildSiteSection(run),
     /** MVP-3: lloji i sitit/faqeve, CMS, conversion dhe sinjale privatësie (jashtë Health Score-it). */
     business: buildBusinessSection(run),
+    /** Cilësia e përmbajtjes dhe identiteti vizual: sinjale për shqyrtim njerëzor, jashtë Health Score-it. */
+    quality: buildQualitySection(run),
     modules: run.results.map(compactModule),
     limitations: [...new Set(limitations)],
   };

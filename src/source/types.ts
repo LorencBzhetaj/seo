@@ -4,7 +4,7 @@ import type { Severity } from '../core/schemas.js';
  * Auditi i skedarëve (dosje lokale / repo): gjetjet lidhen me një path relativ dhe, kur
  * përcaktohet me besueshmëri, me rreshtin. Asgjë s'ekzekutohet: pa build, pa server, pa skripte.
  */
-export type SourceCategory = 'links' | 'seo' | 'images' | 'duplicates' | 'config' | 'security' | 'files';
+export type SourceCategory = 'links' | 'seo' | 'images' | 'duplicates' | 'config' | 'security' | 'files' | 'content';
 
 export interface SourceFinding {
   code: string;
@@ -23,6 +23,8 @@ export interface SourceFinding {
   suggestion: string;
   /** Vende të tjera me të njëjtin problem (p.sh. i njëjti titull në disa skedarë). */
   related?: { file: string; line?: number }[];
+  /** Për sinjalet e cilësisë: pse mund të ndikojë te përshtypja e vizitorit. */
+  whyItMatters?: string;
 }
 
 export type SourceCheckStatus = 'pass' | 'warning' | 'fail' | 'skipped' | 'not_applicable' | 'info';

@@ -1,4 +1,6 @@
 import type { AuditReport } from './json.js';
+import { groupQualityIssues } from './quality.js';
+import { QUALITY_CATEGORY_LABELS, type QualityCategoryKey } from '../core/schemas.js';
 import { BUSINESS_CATEGORY_LABELS, CATEGORY_LABELS, SITE_CATEGORY_LABELS, type BusinessCategoryKey, type CategoryKey, type Issue, type Severity, type SiteCategoryKey } from '../core/schemas.js';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -82,6 +84,7 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
   out.push(...issueLines(report.issues));
   out.push(...siteLines(report, line));
   out.push(...businessLines(report, line));
+  out.push(...qualityLines(report, line));
   out.push(`├${line}┤`);
   out.push(` ${bold('KUFIZIME')}`);
   for (const l of report.limitations.slice(0, 6)) out.push(dim(`  • ${truncate(l, 110)}`));
@@ -103,6 +106,51 @@ function issueLines(issues: Issue[]): string[] {
   });
   if (issues.length > 5) out.push(dim(`  … +${issues.length - 5} issue të tjera në raportin JSON`));
   return out;
+}
+
+/** Cilësia e përmbajtjes dhe identiteti vizual: sinjale pa score, me screenshot-et. */
+function qualityLines(report: AuditReport, line: string): string[] {
+  const q = report.quality;
+  const out = [`├${line}┤`, ` ${bold('CILËSIA E PËRMBAJTJES & IDENTITETI VIZUAL')}  ${dim("sinjale, pa score, jashtë Health")}`];
+  if (q.status === 'skipped' || !('statuses' in q) || !('disclaimer' in q)) {
+    out.push(yellow(`  skipped: ${'reason' in q ? q.reason : ''}`));
+    return out;
+  }
+  out.push(dim(` "AI slop" = emërtim për sinjale që kërkojnë shqyrtim njerëzor; s'provon autorësi AI.`));
+  for (const [k, s] of Object.entries(q.statuses) as [QualityCategoryKey, { status: string; reason?: string; partial?: boolean }][]) {
+    const note = s.status === 'info' ? yellow(`sinjale${s.partial ? ' (partial)' : ''}`) : dim(`${s.status}: ${truncate(s.reason ?? '', 60)}`);
+    out.push(` ${QUALITY_CATEGORY_LABELS[k].padEnd(28)}  —  ${note}`);
+  }
+  const v = q.visual;
+  if ('captures' in v && v.captures) {
+    const ok = v.captures.filter((c) => c.status === 'ok');
+    out.push(dim(` Pamje: ${ok.length}/${v.captures.length} (desktop + mobile) · screenshot-e: output/${v.screenshotsDir}/`));
+    for (const c of v.captures.filter((x) => x.status === 'skipped').slice(0, 3)) out.push(yellow(`   skipped ${c.viewport} ${truncate(c.url, 40)}: ${truncate(c.reason ?? '', 50)}`));
+  } else out.push(dim(` Pamje: ${v.status} — ${truncate(v.reason ?? '', 80)}`));
+  out.push(` ${bold('TOP — SINJALE PËR SHQYRTIM')}`);
+  out.push(...groupLines(groupQualityIssues(q.issues)));
+  return out;
+}
+
+/** Sinjalet e cilësisë, me gjetjet e të njëjtit model në një rresht (URL-të dhe provat veç te JSON-i). */
+function groupLines(groups: ReturnType<typeof groupQualityIssues>): string[] {
+  const out: string[] = [];
+  if (groups.length === 0) out.push(dim('  Asnjë sinjal nga kontrollet e kryera.'));
+  groups.slice(0, 5).forEach((g, idx) => {
+    const pages = g.pages.length > 1 ? `, ${g.pages.length} faqe` : '';
+    out.push(` ${idx + 1}. ${SEV_ICON[g.severity]} ${bold(truncate(g.summary, g.count > 1 ? 110 : 54))}  ${dim(`[${g.code}, p=${g.priority}${pages}, verifiko]`)}`);
+    if (g.count > 1) {
+      out.push(`    ${dim('faqe:')}  ${truncate(g.pages.map(shortPath).join(' · '), 100)}`);
+      out.push(`    ${dim('provë:')} ${g.count} gjetje me të njëjtin model; p.sh. ${truncate(g.example, 70)} ${dim('(të gjitha te JSON)')}`);
+    } else out.push(`    ${dim('provë:')} ${truncate(g.example, 90)}`);
+    out.push(`    ${dim('fix:')}   ${truncate(g.fix, 90)}`);
+  });
+  if (groups.length > 5) out.push(dim(`  … +${groups.length - 5} të tjera në raportin JSON`));
+  return out;
+}
+
+function shortPath(u: string): string {
+  try { return new URL(u).pathname; } catch { return u; }
 }
 
 /** Seksioni i MVP-3: detektimi, conversion dhe sinjalet e privatësisë, jashtë Health Score-it. */

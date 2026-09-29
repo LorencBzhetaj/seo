@@ -26,6 +26,11 @@
   "business": {
     "enabled": true
   },
+  "quality": {
+    "enabled": true,
+    "visual": true,
+    "maxVisualPages": 4
+  },
   "source": {
     "maxFiles": 5000,
     "maxFileBytes": 2097152,

@@ -3,7 +3,7 @@ import { CATEGORY_LABELS } from '../core/schemas.js';
 
 export const SCORING_VERSION = '1.0';
 /** mvp3: shtohen conversion/privacy/detektimi (jashtë Health); formula e Health Score-it s'ndryshon (scoringVersion 1.0). */
-export const RULESET_VERSION = '2026.09-mvp3';
+export const RULESET_VERSION = '2026.09-quality1';
 
 /** Peshat e kategorive (heuristikë e versionuar; do të rishikohen pas validimit të MVP-1). */
 export const CATEGORY_WEIGHTS: Record<CategoryKey, number> = {

@@ -188,7 +188,10 @@ describe('CLI mbi server lokal (fixture)', () => {
         expect(code, stderr).toBe(0);
         const report = JSON.parse(stdout) as AuditReport;
         const lhrFile = (report.lighthouse as { lhrFile?: string }).lhrFile!;
-        const files = fs.readdirSync(dir).sort();
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        // Screenshot-et e modulit vizual shkojnë në nën-dosjen visual/, jo pranë raportit
+        expect(entries.filter((e) => e.isDirectory()).map((e) => e.name)).toEqual(['visual']);
+        const files = entries.filter((e) => e.isFile()).map((e) => e.name).sort();
         expect(files).toHaveLength(2);
         expect(files).toContain(lhrFile);
         expect(files).toContain(lhrFile.replace(/\.lhr\.json$/, '.json'));
@@ -240,7 +243,7 @@ describe('CLI MVP-2: crawl mbi site lokal të kontrolluar', () => {
     // MVP-1 i pandryshuar
     expect(a.categories).toEqual(b.categories);
     expect(a.issues.map((i) => i.code)).toEqual(b.issues.map((i) => i.code));
-    expect(a.reportSchemaVersion).toBe('3');
+    expect(a.reportSchemaVersion).toBe('4');
 
     // Seksioni site
     const s = a.site as Extract<AuditReport['site'], { crawl: unknown }>;

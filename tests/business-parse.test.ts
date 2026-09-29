@@ -152,3 +152,7 @@ it('butoni dygjuhësh (<span> për gjuhë) lexohet me hapësirë: "Send request 
   const b = biz('<form><input type="email" name="email" aria-label="e"><button type="submit"><span class="en">Send request</span><span class="sq">Dërgo kërkesën</span></button></form>');
   expect(b.forms[0]!.submitText).toBe('Send request Dërgo kërkesën');
 });
+
+it('CTA "Kërko ofertë" njihet (kufi Unicode pas "ë")', () => {
+  expect(biz('<main><a class="btn" href="/oferte">Kërko ofertë</a></main>').ctas[0]).toMatchObject({ kind: 'quote', text: 'Kërko ofertë' });
+});

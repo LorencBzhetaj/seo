@@ -27,7 +27,7 @@ export const PROJECT_LABELS: Record<ProjectType, string> = {
 };
 
 /** Kontrollet e auditit të skedarëve dhe mbështetja e tyre sipas llojit. */
-export type SourceCheckId = 'html-seo' | 'local-links' | 'css-assets' | 'duplicates' | 'images' | 'config' | 'sensitive-files';
+export type SourceCheckId = 'html-seo' | 'local-links' | 'css-assets' | 'duplicates' | 'images' | 'config' | 'sensitive-files' | 'content-quality' | 'visual-identity';
 
 export interface CheckSupport {
   id: SourceCheckId;
@@ -124,6 +124,8 @@ export function detectProject(root: string, files: FileEntry[]): ProjectInfo {
     { id: 'images', supported: 'yes' },
     { id: 'config', supported: 'yes' },
     { id: 'sensitive-files', supported: 'yes' },
+    { id: 'content-quality', supported: htmlReason || spa ? 'no' : 'yes', reason: htmlReason ?? (spa ? 'përmbajtja renderohet me JS' : undefined) },
+    { id: 'visual-identity', supported: 'no', reason: 'Renderimi në browser do të ekzekutonte kodin/JS e projektit — s\'bëhet automatikisht në auditin e skedarëve. Audito URL-në pas deploy-it për desktop/mobile.' },
   ];
   const notFromFiles = [
     { check: 'Health Score', reason: 'kërkon auditin e URL-së publike (headers, Lighthouse, crawl) — s\'shpiket nga skedarët' },

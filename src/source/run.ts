@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Severity } from '../core/schemas.js';
 import { configChecks, cssChecks, finding, htmlChecks, imageChecks, sensitiveChecks, type CheckInput } from './checks.js';
+import { parsePage } from '../parse/page.js';
+import { textPageFrom } from '../quality/pages.js';
+import { analyzeText } from '../quality/text.js';
 import { detectProject, type ProjectInfo, type SourceCheckId } from './project.js';
 import { buildIndex } from './refs.js';
 import { cloneRepo, DEFAULT_REPO_LIMITS, type RepoLimits } from './repo.js';
@@ -71,6 +74,8 @@ export const CHECK_LABELS: Record<SourceCheckId, string> = {
   images: 'Imazhet (madhësia)',
   config: 'Konfigurime (robots, sitemap, favicon, JSON, hosting)',
   'sensitive-files': 'Skedarë të ndjeshëm dhe sekrete',
+  'content-quality': 'Cilësia e përmbajtjes (sinjale, pa score)',
+  'visual-identity': 'Identiteti vizual (desktop/mobile)',
 };
 
 const SEV_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -160,6 +165,21 @@ export async function executeSourceAudit(input: SourceInput, opts: SourceAuditOp
     ];
     const findings: SourceFinding[] = outputs.flatMap((o) => o.findings);
 
+    // Cilësia e përmbajtjes: e njëjta analizë si te URL-ja, mbi HTML-në në disk (pa ekzekutim), me rreshta.
+    const qualityObs: string[] = [];
+    if (on('content-quality')) {
+      const htmlRead = walk.files.filter((f) => /\.html?$/i.test(f.ext) && texts.has(f.rel) && !/(^|\/)(404|privacy|terms|cookies?)[^/]*\.html?$/i.test(f.rel));
+      const pages = htmlRead.map((f) => textPageFrom(f.rel, parsePage(texts.get(f.rel)!, `https://source.invalid/${encodeURI(f.rel)}`), texts.get(f.rel)));
+      const a = analyzeText(pages);
+      qualityObs.push(`${pages.length} skedarë HTML (pa 404/ligjore)`, ...a.observations);
+      for (const s of a.signals) {
+        findings.push({
+          ...finding(s.code, 'content', s.severity, s.confidence, s.target, s.line, s.message, s.evidence.join(' · '), s.suggestion, s.related.map((r) => ({ file: r }))),
+          whyItMatters: s.whyItMatters,
+        });
+      }
+    }
+
     // Symlink-et jashtë dosjes: s'ndiqen, por shënohen (mund të sjellin skedarë të papritur në deploy).
     for (const s of skipped.filter((x) => x.reason === 'symlink-outside')) {
       findings.push(finding('SYMLINK_OUTSIDE_ROOT', 'files', 'low', 0.9, s.rel, undefined, 'Symlink që del jashtë dosjes — s\'u ndoq', `${s.rel} (${s.detail ?? 'jashtë rrënjës'})`, 'Kontrollo nëse duhet; shumë hoste s\'i ndjekin symlink-et ose publikojnë skedarë të papritur.'));
@@ -174,8 +194,10 @@ export async function executeSourceAudit(input: SourceInput, opts: SourceAuditOp
       images: (f) => f.category === 'images' && f.code !== 'IMG_MISSING_ALT',
       config: (f) => f.category === 'config',
       'sensitive-files': (f) => f.category === 'security',
+      'content-quality': (f) => f.category === 'content',
+      'visual-identity': () => false,
     };
-    const observations = Object.assign({}, ...outputs.map((o) => o.observations)) as Partial<Record<SourceCheckId, string[]>>;
+    const observations = Object.assign({}, ...outputs.map((o) => o.observations), { 'content-quality': qualityObs }) as Partial<Record<SourceCheckId, string[]>>;
     const checks: SourceCheck[] = (Object.keys(CHECK_LABELS) as SourceCheckId[]).map((id) => {
       const s = sup(id);
       if (s.supported === 'no') return { id, label: CHECK_LABELS[id], status: 'skipped', reason: s.reason, findingCodes: [] };
@@ -183,7 +205,7 @@ export async function executeSourceAudit(input: SourceInput, opts: SourceAuditOp
       const obs = [...(observations[id] ?? [])];
       if (s.supported === 'partial') obs.unshift(`I pjesshëm: ${s.reason}`);
       if ((id === 'html-seo' || id === 'local-links') && htmlTooLarge.length) obs.push(`${htmlTooLarge.length} HTML mbi kufirin e leximit s'u kontrolluan: ${htmlTooLarge.slice(0, 3).map((x) => x.rel).join(', ')}`);
-      return { id, label: CHECK_LABELS[id], status: statusOf(mine), observations: obs, findingCodes: [...new Set(mine.map((f) => f.code))] };
+      return { id, label: CHECK_LABELS[id], status: id === 'content-quality' ? (mine.length ? 'info' : 'pass') : statusOf(mine), observations: obs, findingCodes: [...new Set(mine.map((f) => f.code))] };
     });
 
     // Kufiri për kod, që një problem i përsëritur të mos mbushë raportin

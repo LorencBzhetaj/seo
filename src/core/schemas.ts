@@ -74,8 +74,8 @@ export type ModuleStatus = 'pass' | 'warning' | 'fail' | 'not_applicable' | 'ski
 export interface AuditResult {
   module: string;
   category: AnyCategoryKey;
-  /** homepage = MVP-1 (faqja hyrëse); site = gjetje nga crawl-i (MVP-2); business = conversion/privacy (MVP-3). */
-  section: 'homepage' | 'site' | 'business';
+  /** homepage = MVP-1; site = crawl (MVP-2); business = conversion/privacy (MVP-3); quality = përmbajtja/pamja. */
+  section: 'homepage' | 'site' | 'business' | 'quality';
   score: number | null;
   status: ModuleStatus;
   partial: boolean;
@@ -124,10 +124,22 @@ export function isBusinessCategory(c: string): c is BusinessCategoryKey {
   return c in BUSINESS_CATEGORY_LABELS;
 }
 
-export type AnyCategoryKey = CategoryKey | SiteCategoryKey | BusinessCategoryKey;
+/** Cilësia e përmbajtjes dhe identiteti vizual: sinjale, jashtë Health Score-it derisa të kalibrohen. */
+export type QualityCategoryKey = 'contentQuality' | 'visualIdentity';
+
+export const QUALITY_CATEGORY_LABELS: Record<QualityCategoryKey, string> = {
+  contentQuality: 'Cilësia e përmbajtjes',
+  visualIdentity: 'Identiteti vizual',
+};
+
+export function isQualityCategory(c: string): c is QualityCategoryKey {
+  return c in QUALITY_CATEGORY_LABELS;
+}
+
+export type AnyCategoryKey = CategoryKey | SiteCategoryKey | BusinessCategoryKey | QualityCategoryKey;
 
 export function sectionOf(c: AnyCategoryKey): AuditResult['section'] {
-  return isSiteCategory(c) ? 'site' : isBusinessCategory(c) ? 'business' : 'homepage';
+  return isSiteCategory(c) ? 'site' : isBusinessCategory(c) ? 'business' : isQualityCategory(c) ? 'quality' : 'homepage';
 }
 
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {

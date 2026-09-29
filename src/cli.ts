@@ -11,6 +11,7 @@ import { renderTerminal } from './report/terminal.js';
 import { RepoError } from './source/repo.js';
 import { buildSourceReport, renderSourceTerminal, writeSourceReport } from './source/report.js';
 import { executeSourceAudit } from './source/run.js';
+import { captureVisual } from './visual/capture.js';
 
 const HELP = `Përdorimi: website-audit <url> [opsione]
           website-audit --folder <dosje> [--out <dir>] [--json]
@@ -28,6 +29,8 @@ Opsione:
   --no-lighthouse         Mos ekzekuto Lighthouse (performance/accessibility → skipped)
   --no-crawl              Vetëm faqja hyrëse (MVP-1), pa crawl/sitemap
   --no-business           Pa modulet e MVP-3 (conversion, privacy, detektim)
+  --no-quality            Pa cilësinë e përmbajtjes dhe identitetin vizual
+  --no-visual             Pa renderimin në browser (vetëm analiza e tekstit)
   --max-pages <n>         Faqe maksimale për crawl (parazgjedhje 25, maks. 100)
   --max-depth <n>         Thellësia maksimale e linkeve (parazgjedhje 3)
   --chrome-path <path>    Rruga e Chrome/Chromium për Lighthouse
@@ -56,6 +59,8 @@ async function main(): Promise<number> {
       'save-lhr': { type: 'boolean', default: false },
       'no-crawl': { type: 'boolean', default: false },
       'no-business': { type: 'boolean', default: false },
+      'no-quality': { type: 'boolean', default: false },
+      'no-visual': { type: 'boolean', default: false },
       'max-pages': { type: 'string' },
       'max-depth': { type: 'string' },
       'allow-local': { type: 'string' },
@@ -103,6 +108,7 @@ async function main(): Promise<number> {
       maxDepth: maxDepth ?? base.crawl.maxDepth,
     },
     business: { ...base.business, enabled: values['no-business'] ? false : base.business.enabled },
+    quality: { ...base.quality, enabled: values['no-quality'] ? false : base.quality.enabled, visual: values['no-visual'] || values['no-lighthouse'] ? false : base.quality.visual },
     lighthouse: {
       ...base.lighthouse,
       enabled: values['no-lighthouse'] ? false : base.lighthouse.enabled,
@@ -123,6 +129,11 @@ async function main(): Promise<number> {
       onStatus: (s) => statusText[s] && log(`• ${statusText[s]}`),
       onStep: (step) => log(`  – ${step}`),
       runLighthouse,
+      captureVisual: (targets, cfg) => {
+        const host = new URL(targets[0]?.url ?? positionals[0]!).hostname.replace(/[^a-z0-9.-]/gi, '_');
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+        return captureVisual(targets, cfg, path.resolve(cfg.outputDir), `${host}-${stamp}`);
+      },
     });
     const report = buildReport(run);
     const lh = run.context?.lighthouse;

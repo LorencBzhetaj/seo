@@ -90,7 +90,7 @@ export function renderSourceTerminal(report: SourceReport, reportPath?: string):
   for (const [reason, x] of Object.entries(cov.skipped)) if (x) out.push(dim(`   ${x.count} ${x.meaning}${x.examples.length ? `: ${trunc(x.examples.join(', '), 70)}` : ''}`));
   out.push(`├${line}┤`);
   for (const ch of report.checks) {
-    const st = ch.status === 'pass' ? green('ok     ') : ch.status === 'fail' ? red('fail   ') : ch.status === 'warning' ? yellow('warning') : dim('skipped');
+    const st = ch.status === 'pass' ? green('ok     ') : ch.status === 'fail' ? red('fail   ') : ch.status === 'warning' ? yellow('warning') : ch.status === 'info' ? yellow('sinjale') : dim('skipped');
     out.push(` ${st} ${ch.label}`);
     if (ch.status === 'skipped' && ch.reason) out.push(dim(`         ${trunc(ch.reason, 100)}`));
   }

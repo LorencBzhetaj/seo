@@ -15,12 +15,13 @@
     "audit": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:lighthouse": "cross-env RUN_LIGHTHOUSE_TESTS=1 vitest run tests/cli.e2e.test.ts"
+    "test:lighthouse": "cross-env RUN_LIGHTHOUSE_TESTS=1 vitest run tests/cli.e2e.test.ts tests/visual.e2e.test.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
     "chrome-launcher": "^1.2.1",
-    "lighthouse": "^13.5.0"
+    "lighthouse": "^13.5.0",
+    "puppeteer-core": "^25.12.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

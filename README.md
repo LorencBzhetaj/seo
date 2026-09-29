@@ -1,4 +1,4 @@
-# Website Auditor — MVP-1 + MVP-2 + MVP-3
+# Website Auditor — MVP-1 + MVP-2 + MVP-3 + cilësia
 
 CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1), me një crawl të kufizuar **faqet e tjera** të një siti (MVP-2), dhe **sinjalet e biznesit e të privatësisë** me zbulim të llojit të sitit e CMS-it (MVP-3). Jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1, MVP-2 dhe MVP-3 (§11). Mbetet CLI për përdorim personal: pa SaaS, llogari përdoruesish apo instalues.
 
@@ -40,6 +40,8 @@ Opsione:
 | `--ignore-robots` | Anashkalo robots.txt për tool-in — **vetëm për site që i kontrollon vetë** |
 | `--allow-local <host:port>` | **Vetëm për fixtures/teste**: lejo një host lokal |
 | `--no-business` | Pa modulet e MVP-3 (conversion, privacy, detektimi i llojit/CMS-it) |
+| `--no-quality` | Pa modulin "Cilësia e përmbajtjes dhe identiteti vizual" |
+| `--no-visual` | Pa renderim desktop/mobile dhe screenshot-e (teksti kontrollohet gjithsesi); `--no-lighthouse` e çaktivizon edhe këtë |
 | `--json` | Shtyp JSON-in në stdout në vend të përmbledhjes |
 
 Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL/dosje e pavlefshme ose e bllokuar, `3` bllokuar nga robots.txt, `4` repo e paarritshme (private/s'ekziston), e paplotë ose tepër e madhe.
@@ -229,6 +231,45 @@ npm run audit -- --repo https://github.com/octocat/Spoon-Knife
 - **`--repo`:** vetëm `https://` publik (pa kredenciale në URL, pa SSH, host jo privat). Klonim i cekët (`--depth 1`, pa tags/submodule/LFS) në një dosje të përkohshme që fshihet pas auditit. **Asgjë s'ekzekutohet:** pa `npm install`, build, skripte, hooks (`core.hooksPath` bosh), symlink-e (`core.symlinks=false`) apo filtra LFS. Kufij: 150 MB dhe 120 s; tejkalimi e ndërpret klonimin dhe kopja e paplotë s'auditohet. Raporti ruan URL-në, commit-in, branch-in dhe datën.
 - **Repo private:** credential helper-at çaktivizohen dhe s'ka prompt. Një repo private ose që s'ekziston jep exit `4` me mesazhin që qasja kërkon konfigurim të veçantë, që s'mbështetet ende.
 
+## Cilësia e përmbajtjes dhe identiteti vizual
+
+Gjen faqe që mund t'i duken vizitorit **gjenerike, të përsëritura ose pa identitet të qartë**. Seksioni `quality` i raportit (`reportSchemaVersion: "4"`) ka **sinjale për shqyrtim njerëzor, pa score**. Qëndron **jashtë Health Score-it** derisa pragjet të kalibrohen.
+
+> "AI slop" është vetëm një emërtim i thjeshtë për këto sinjale. Tool-i **s'pretendon kurrë** se mund të provojë që një tekst apo dizajn është krijuar nga AI. Çdo gjetje e thotë këtë te `whyItMatters`.
+
+Çdo gjetje ka: URL (ose skedar + rresht në `--folder`/`--repo`), provë konkrete, pse ka rëndësi për vizitorin, `confidence` dhe sugjerim praktik. Gjetjet subjektive janë `low` dhe kërkojnë verifikim manual.
+
+**Teksti** (nga HTML-ja e crawl-it; header/nav/footer/aside/form hiqen para analizës):
+
+| Kodi | Kur | Severity / confidence |
+|---|---|---|
+| `REPEATED_CONTENT_BLOCK` | i njëjti paragraf/listë (≥ 12 fjalë) në ≥ 3 faqe të së njëjtës gjuhë. Blloku në ≥ 60% të faqeve trajtohet si shabllon dhe s'penalizohet | low / 0.5 |
+| `GENERIC_COPY` | ≥ 3 fraza të përgjithshme (sq/en) të dendura dhe pak detaje konkrete (çmime, orare, numra, vende) | low / 0.4 |
+| `TITLE_CONTENT_MISMATCH` | asnjë fjalë kyçe e titullit (pa emrin e markës) s'del në H1/përmbajtje; forma të lakuara shqip pranohen | low / 0.5 |
+| `GENERIC_LINK_TEXT_REPEATED` | i njëjti "Lexo më shumë"/"Read more" drejt ≥ 3 destinacioneve të ndryshme, në përmbajtje (jo në menu/footer), **pa titull ose tekst pranë që i dallon**. Drejt së njëjtës faqe s'raportohet | low / 0.6 |
+| `LINK_NAME_AMBIGUOUS_OUT_OF_CONTEXT` | si më sipër, por brenda kartave me titull/përshkrim: **vërejtje aksesueshmërie, jo "AI slop"**. Provë: emri i aksesueshëm (teksti, `aria-label`, `aria-labelledby`) dhe konteksti. Emri llogaritet me algoritëm të thjeshtuar: s'është vlerësim përputhshmërie me WCAG, verifikoje me lexues ekrani. Në terminal, gjetjet me të njëjtin model grupohen në një rresht me numrin e faqeve; JSON-i i mban veç (`quality.issues`, plus përmbledhjen `quality.groups`) | low / 0.6 |
+| `CTA_REPEATED_ON_PAGE` | i njëjti CTA ≥ 4× drejt së njëjtës faqe, pa kontekst dallues. CTA-të në karta produktesh ose plane çmimesh (titull, koka e kolonës në tabelë) ose drejt destinacioneve të ndryshme s'raportohen | low / 0.4 |
+
+Përkthimet sq/en s'krahasohen me njëra-tjetrën. Faqet ligjore (privatësia, kushtet, cookies) përjashtohen. I njëjti sinjal me prova identike në dy URL (p.sh. `/` dhe `/homepage`) bashkohet në një, me URL-në e dytë te `affectedPages`.
+
+**Pamja** (Chrome headless, **desktop 1366×900 + mobile 390×844**, parazgjedhje 4 faqe përfaqësuese, max 8): faqja hyrëse, pastaj një faqe për çdo lloj (kontakt, produkt, dhoma, menu, blog…), pa faqe ligjore apo `noindex`. Renderimi kalon nga i njëjti guard proxy (SSRF), me ≥ 500 ms mes navigimeve. Ridrejtimi te një host tjetër, HTTP ≥ 400 ose timeout (30 s) → pamja del `skipped` me arsye, dhe moduli del `partial`.
+
+| Kodi | Kur | Severity / confidence |
+|---|---|---|
+| `MOBILE_HORIZONTAL_OVERFLOW` | `scrollWidth` kalon gjerësinë 390 px me > 8 px | medium / 0.9 |
+| `PLACEHOLDER_IMAGE` | imazh nga shërbime placeholder (placehold.co, picsum…) ose me emër placeholder/dummy/no-image në përmbajtje | medium / 0.8 |
+| `STOCK_OR_DEMO_IMAGERY` | ≥ 2 imazhe nga banka stock (Unsplash, Pexels, Shutterstock…) ose demo të temës | low / 0.4 |
+| `REPEATED_HERO_IMAGE` | i njëjti imazh hero në ≥ 3 faqe (madhësitë WordPress bashkohen) | low / 0.5 |
+| `UNIFORM_ICON_CARDS` | ≥ 3 grupe identike ikonë+titull+tekst pa foto, ≥ 9 karta | low / 0.35 |
+| `GRADIENT_HEAVY` | i njëjti gradient si sfond në ≥ 3 blloqe të mëdha, ose gradient në ≥ 50% të ≥ 4 seksioneve kryesore (sipas pozicionit). Tekst me gradient s'numërohet | low / 0.35 |
+| `IDENTICAL_SECTION_LAYOUT` | e njëjta renditje seksionesh me karta/gradient në ≥ 3 faqe të llojeve të ndryshme | low / 0.35 |
+
+Një gradient, një grup kartash ose një shabllon i zakonshëm, **më vete s'është problem**. Sinjali kërkon përsëritje të matur në faqen e renderuar dhe e thotë që mund të jetë stil i qëllimshëm i markës.
+
+**Screenshot-et** ruhen te `output/visual/{host}-{koha}/` (jashtë Git) dhe lidhen me gjetjet si evidence `screenshot`. Mund të përmbajnë të dhëna të faqes: kontrolloji para se t'i ndash.
+
+**Te `--folder`/`--repo`:** kontrollohet vetëm teksti (`content-quality`, me skedar + rresht). Pamja del `skipped`, sepse renderimi do të ekzekutonte kodin/JS-në e projektit.
+
 ## Jashtë MVP-3 (ende)
 
 Renderimi me JavaScript gjatë crawl-it dhe matja "above the fold" në viewport; klikimi i banner-it të pëlqimit (para/pas pranimit); testimi i validimit të formave në browser (dry-run pa submit); kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe); Health Score i përbashkët për site-in; sitemap-e `.gz`. Edhe fazat e mëvonshme mbeten jashtë: submit real formularësh, exposure probing, AI/vision (MVP-4), HTML/PDF report, dashboard, histori (SQLite), `llms.txt`, instalues Windows.
@@ -246,6 +287,9 @@ src/
   modules/                   # faqja hyrëse: availability, seo-technical, security, lighthouse-modules
   modules/site/              # MVP-2: links, sitemap, duplicates, onpage, caching, i18n
   modules/business/          # MVP-3: conversion, privacy (sinjale, pa score)
+  modules/quality/           # cilësia e përmbajtjes + identiteti vizual (sinjale, pa score)
+  quality/                   # analiza e tekstit dhe e pamjes (pa rrjet)
+  visual/                    # renderim desktop/mobile + probe (përmes guard proxy)
   source/                    # audit i skedarëve: walk, project, refs, checks, repo (klon i sigurt), run, report
   detection/                 # MVP-3: page-type, tech-stack (confidence + signals), index (faqet + cache)
   intelligence/              # priority (§4), similarity (shingle/Jaccard)

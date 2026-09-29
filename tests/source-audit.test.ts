@@ -274,3 +274,21 @@ describe('Mbulimi: çdo skedar i listuar ka trajtim të shpjeguar', () => {
     for (const rel of ['e-madhe.html', 'img/lfs.png', 'data.json']) expect(listed).toContain(rel);
   });
 });
+
+describe('Auditi i skedarëve: cilësia e përmbajtjes', () => {
+  it('paragraf i përsëritur në 3 skedarë → sinjal me skedar:rresht; pamja skipped pa ekzekutuar kod', async () => {
+    const dir = tempDir();
+    const para = 'Ofrojmë shërbime të personalizuara për çdo klient me vëmendje të veçantë ndaj detajeve dhe kërkesave tuaja specifike.';
+    const marker = path.join(path.dirname(dir), 'js-u-ekzekutua');
+    for (const [i, name] of ['a.html', 'b.html', 'c.html', 'd.html', 'e.html', 'f.html'].entries()) {
+      write(dir, name, `<!doctype html>\n<html lang="sq">\n<head><title>Faqja ${name} e testit | Sit</title></head>\n<body>\n<main>\n<h1>Faqja ${name}</h1>\n${i < 3 ? `<p>${para}</p>\n` : ''}<p>Tekst unik ${i} për faqen ${name} me disa fjalë të tjera që e dallojnë.</p>\n</main>\n<script>require('fs').writeFileSync(${JSON.stringify(marker)}, 'x')</script>\n</body>\n</html>\n`);
+    }
+    const r = await executeSourceAudit({ kind: 'folder', target: dir });
+    const f = r.findings.find((x) => x.code === 'REPEATED_CONTENT_BLOCK')!;
+    expect(f).toMatchObject({ category: 'content', file: 'a.html', line: 7, confidence: 0.5, needsManualReview: true, related: [{ file: 'b.html' }, { file: 'c.html' }] });
+    expect(f.whyItMatters).toMatch(/s'provon që teksti\/dizajni është krijuar nga AI/);
+    expect(r.checks.find((c) => c.id === 'content-quality')!.status).toBe('info');
+    expect(r.checks.find((c) => c.id === 'visual-identity')).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/do të ekzekutonte kodin\/JS e projektit/) });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+});

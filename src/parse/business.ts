@@ -1,4 +1,5 @@
 import type * as cheerio from 'cheerio';
+import { entityContext } from './context.js';
 import { snippet } from './html.js';
 
 /**
@@ -21,6 +22,8 @@ export interface CtaSignal {
   /** Radha në DOM mes elementeve të klikueshëm — përafrim, JO pozicion "above the fold". */
   order: number;
   snippet: string;
+  /** Produkti/plani/karta ku ndodhet (titulli, teksti pranë ose koka e kolonës), kur gjendet. */
+  context?: string;
 }
 
 export interface ContactSignals {
@@ -149,7 +152,8 @@ const CTA_PATTERNS: [CtaKind, RegExp][] = [
   ['buy', /\b(buy|shop now|add to cart|order( now)?|porosit\w*|bli|blej|purchase|gift cards?)\b/i],
   ['contact', /\b(contact( us)?|kontakt\w*|na kontaktoni|get in touch|na shkruani|message us|write to us|enquire|inquire)\b/i],
   ['call', /\b(call( us| now)?|na telefononi|telefono)\b/i],
-  ['quote', /\b(get a quote|request a quote|kërko ofertë|get started)\b/i],
+  // Kufi Unicode në fund: \b s'funksionon pas "ë"
+  ['quote', /\b(get a quote|request a quote|kërko ofertë|get started)(?![\p{L}\p{N}])/iu],
   ['signup', /\b(sign up|subscribe|regjistrohu|abonohu|newsletter|join)\b/i],
   ['directions', /\b(get directions|directions|si të vini|udhëzime|how to get)\b/i],
 ];
@@ -399,7 +403,9 @@ export function extractBusinessSignals($: cheerio.CheerioAPI, pageUrl: string, b
     if (!kind) return;
     // Butonat brenda formularëve (submit) i mbulon kontrolli i formave.
     if (tag !== 'a' && $el.closest('form').length) return;
-    ctas.push({ kind, text, href: abs, element: tag === 'button' ? 'button' : tag === 'input' ? 'input' : 'a', styled, region: regionOf($, el), order, snippet: snippet($.html(el)) });
+    const region = regionOf($, el);
+    const context = region === 'main' ? entityContext($, el, (x) => x.toLowerCase() === text.toLowerCase()) : undefined;
+    ctas.push({ kind, text, href: abs, element: tag === 'button' ? 'button' : tag === 'input' ? 'input' : 'a', styled, region, order, snippet: snippet($.html(el)), ...(context ? { context } : {}) });
   });
 
   // --- Adresë, orar, dëshmi ---

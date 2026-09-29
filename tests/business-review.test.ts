@@ -22,7 +22,7 @@ function makeRun(ctx: AuditContext): AuditRun {
   const home = results.filter((r) => r.section === 'homepage');
   return {
     id: 'r', url: ctx.url, startedAt: '2026-09-29T12:00:00.000Z', completedAt: '2026-09-29T12:01:00.000Z', status: 'completed', config: ctx.config, context: ctx, results,
-    issues: sortIssues(home.flatMap((r) => r.issues)), siteIssues: [], businessIssues: sortIssues(results.filter((r) => r.section === 'business').flatMap((r) => r.issues)),
+    issues: sortIssues(home.flatMap((r) => r.issues)), siteIssues: [], qualityIssues: [], businessIssues: sortIssues(results.filter((r) => r.section === 'business').flatMap((r) => r.issues)),
     categories: categoryScores(home), health: computeHealth(home, home.flatMap((r) => r.issues)), scoringVersion: '1.0', ruleSetVersion: 'test',
   };
 }
