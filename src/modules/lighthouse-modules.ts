@@ -308,6 +308,9 @@ export function runPerformance(ctx: AuditContext): AuditResult {
     'INP: unavailable — s\'ka të dhëna fushore (CrUX) të konfiguruara; INP s\'matet në laborator.',
   );
   if (lh.runWarnings.length) m.limitations.push(...lh.runWarnings.map((w) => `Lighthouse warning: ${w}`));
+  for (const f of lh.failedAttempts ?? []) {
+    m.limitations.push(`Lighthouse: përpjekja ${f.attempt} dështoi (${f.code ?? 'gabim'}) — gabim i regjistrimit të trace-it në Chrome, jo i faqes; rezultati është nga përpjekja ${lh.failedAttempts.length + 1}.`);
+  }
   if (lh.blockedRequests.length) {
     m.limitations.push(`${lh.blockedRequests.length} kërkesa të browser-it drejt adresave lokale/private u bllokuan (p.sh. ${lh.blockedRequests[0]!.url}).`);
   }

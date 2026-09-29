@@ -46,6 +46,15 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
   } else {
     out.push(`    ${yellow(bold('PARTIAL'))} — Health Score nuk u gjenerua`);
   }
+  // Dështimi i Lighthouse s'fshihet: as kur mungon rezultati, as kur erdhi pas riprovimit.
+  const lhMeta = report.lighthouse as { status?: string; code?: string; reason?: string; failedAttempts?: { attempt: number; code?: string }[] };
+  if (lhMeta.status === 'error') {
+    out.push(` ${red(bold(`⚠ LIGHTHOUSE DËSHTOI${lhMeta.code ? ` (${lhMeta.code})` : ''}`))} — Performance, Accessibility, Best Practices pa rezultat`);
+    out.push(yellow(`   ${truncate(lhMeta.reason ?? '', 110)}`));
+    if (lhMeta.code && ['NO_NAVSTART', 'NO_TRACING_STARTED'].includes(lhMeta.code)) out.push(yellow("   Gabim i trace-it në Chrome (jo i faqes) — ekzekuto auditin sërish."));
+  } else if (lhMeta.failedAttempts?.length) {
+    out.push(yellow(` ⚠ Lighthouse: ${lhMeta.failedAttempts.map((f) => `përpjekja ${f.attempt} dështoi (${f.code ?? 'gabim'})`).join(', ')}; rezultati nga përpjekja ${lhMeta.failedAttempts.length + 1}`));
+  }
   out.push(`├${line}┤`);
   for (const [k, v] of Object.entries(report.categories) as [CategoryKey, number | null][]) {
     const mod = report.modules.find((m) => m.category === k);
@@ -121,7 +130,9 @@ function siteLines(report: AuditReport, line: string): string[] {
         ? dim(` ${mod?.status === 'not_applicable' ? 'n/a' : 'skipped'}: ${truncate(mod?.reason ?? 'ende pa implementuar', 40)}`)
         : cov?.partial
           ? yellow(` partial — vetëm ${cov.checked}/${cov.discovered} URL, jo për gjithë sitin`)
-          : '';
+          : cov?.excludedByRule
+            ? dim(` ${cov.checked}/${cov.discovered} URL; ${cov.excludedByRule} të përjashtuara me rregull (shih kufizimet)`)
+            : '';
     out.push(` ${SITE_CATEGORY_LABELS[k].padEnd(28)} ${scoreColor(v)}${note}`);
   }
   out.push(` ${bold('TOP — GJETJE PËR SHUMË FAQE')}`);

@@ -94,3 +94,28 @@ describe('Sitemap Health mbi site lokal', () => {
     expect(i.evidence[0]!.detected).toMatch(/HTML në vend të XML/);
   });
 });
+
+describe('Sitemap: URL të pakontrolluara me arsyen e saktë', () => {
+  it('cart/checkout nga sitemap-i: përjashtim me rregull (jo partial); kufiri i faqeve: partial', async () => {
+    const { siteCtx, htmlPage } = await import('./site-helpers.js');
+    const B = 'https://e.com';
+    const entry = (loc: string) => ({ loc, sitemap: `${B}/page-sitemap.xml`, key: loc, internal: true });
+    const make = (notChecked: { url: string; reason: 'unsafe' | 'max-pages' }[]) => {
+      const ctx = siteCtx([{ url: `${B}/`, html: htmlPage({ title: 'Kreu' }) }, { url: `${B}/a/`, html: htmlPage({ title: 'A' }) }], {
+        notChecked, notCheckedCounts: Object.fromEntries(notChecked.map((n) => [n.reason, notChecked.filter((x) => x.reason === n.reason).length])),
+        truncated: notChecked.some((n) => n.reason === 'max-pages'),
+      });
+      const urls = [`${B}/`, `${B}/a/`, ...notChecked.map((n) => n.url)].map(entry);
+      return { ...ctx, sitemaps: { status: 'ok' as const, value: { discoveredVia: 'robots' as const, files: [], urls, truncated: false, triedDefaults: [] } } };
+    };
+    const rule = runSitemap(make([{ url: `${B}/cart/`, reason: 'unsafe' }, { url: `${B}/checkout/`, reason: 'unsafe' }]));
+    expect(rule.partial).toBe(false);
+    expect(rule.coverage).toEqual({ checked: 2, discovered: 4, excludedByRule: 2, truncated: false });
+    expect(rule.limitations.join(' ')).toContain(`Sitemap: 2 nga 4 URL s'u vizituan me qëllim — 2 URL që mund të ndryshojë gjendje (login/logout/cart/checkout/veprim): ${B}/cart/, ${B}/checkout/.`);
+    expect(rule.limitations.join(' ')).not.toMatch(/kufij/);
+
+    const limit = runSitemap(make([{ url: `${B}/b/`, reason: 'max-pages' }]));
+    expect(limit.partial).toBe(true);
+    expect(limit.limitations.join(' ')).toContain(`1 nga 3 URL s'u kontrolluan nga kufijtë e crawl-it — 1 kufiri i faqeve (maxPages): ${B}/b/`);
+  });
+});

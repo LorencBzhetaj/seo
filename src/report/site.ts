@@ -79,6 +79,7 @@ export function buildSiteSection(run: AuditRun) {
           partial: r.partial || crawl.truncated,
           checked: r.coverage.checked,
           discovered: r.coverage.discovered,
+          excludedByRule: r.coverage.excludedByRule,
           scope: r.score === null ? 'pa score' : r.partial || crawl.truncated ? 'vetëm faqet e kontrolluara — jo rezultat për gjithë sitin' : 'faqet e kontrolluara (crawl i plotë brenda kufijve)',
         },
       ]),

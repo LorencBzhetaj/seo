@@ -51,6 +51,45 @@ export interface LighthouseData {
   blockedRequests: { url: string; reason: string }[];
   /** LHR i plotë, vetëm kur lighthouse.saveLhr është aktiv. S'futet në raportin JSON. */
   rawLhr?: unknown;
+  /** Përpjekjet e dështuara para kësaj (bosh kur e para pati sukses) — raportohen, s'fshihen. */
+  failedAttempts: LighthouseAttempt[];
+}
+
+export interface LighthouseAttempt {
+  attempt: number;
+  code?: string;
+  message: string;
+}
+
+/**
+ * Gabime të regjistrimit të trace-it në Chrome, jo të faqes: p.sh. NO_NAVSTART = trace-i s'ka
+ * eventin navigationStart të frame-it kryesor, ndonëse faqja u ngarkua. Lighthouse vetë këshillon
+ * "run Lighthouse again". Vetëm këto riprovohen; gabimet e faqes (p.sh. 4xx, NO_FCP) jo.
+ */
+export const RETRYABLE_LH_ERRORS: ReadonlySet<string> = new Set(['NO_NAVSTART', 'NO_TRACING_STARTED']);
+const MAX_ATTEMPTS = 2;
+
+export class LighthouseRunError extends Error {
+  constructor(message: string, readonly code: string | undefined, readonly attempts: LighthouseAttempt[]) {
+    super(message);
+  }
+}
+
+/** Ekzekuton `once` dhe e përsërit vetëm për gabime kalimtare të trace-it; çdo dështim regjistrohet. */
+export async function runWithRetry<T>(once: (attempt: number) => Promise<T>, maxAttempts = MAX_ATTEMPTS): Promise<{ value: T; failedAttempts: LighthouseAttempt[] }> {
+  const failed: LighthouseAttempt[] = [];
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return { value: await once(attempt), failedAttempts: failed };
+    } catch (err) {
+      const e = err as Error & { code?: string };
+      failed.push({ attempt, code: e.code, message: e.message });
+      if (!e.code || !RETRYABLE_LH_ERRORS.has(e.code) || attempt >= maxAttempts) {
+        const note = failed.length > 1 ? ` (${failed.length} përpjekje, të gjitha dështuan: ${failed.map((f) => f.code ?? 'gabim').join(', ')})` : '';
+        throw new LighthouseRunError(`${e.message}${note}`, e.code, failed);
+      }
+    }
+  }
 }
 
 const CATEGORIES = ['performance', 'accessibility', 'best-practices', 'seo'];
@@ -71,6 +110,11 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  * faqen hyrëse. Chrome kalon përmes guard proxy që bllokon localhost/IP private.
  */
 export async function runLighthouse(url: string, config: AuditConfig): Promise<LighthouseData> {
+  const { value, failedAttempts } = await runWithRetry(() => runLighthouseOnce(url, config));
+  return { ...value, failedAttempts };
+}
+
+async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit<LighthouseData, 'failedAttempts'>> {
   const [{ default: lighthouse }, chromeLauncher] = await Promise.all([import('lighthouse'), import('chrome-launcher')]);
   const proxy = await startGuardProxy(config.allowedPrivateHosts);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-chrome-'));
@@ -105,7 +149,7 @@ export async function runLighthouse(url: string, config: AuditConfig): Promise<L
     if (!lhr) throw new Error('Lighthouse nuk ktheu rezultat');
     if (lhr.runtimeError) {
       const blockedNote = proxy.blocked.length ? ` (bllokuar nga guard proxy: ${proxy.blocked[0]!.url})` : '';
-      throw new Error(`Lighthouse runtimeError ${lhr.runtimeError.code}: ${lhr.runtimeError.message}${blockedNote}`);
+      throw Object.assign(new Error(`Lighthouse runtimeError ${lhr.runtimeError.code}: ${lhr.runtimeError.message}${blockedNote}`), { code: lhr.runtimeError.code });
     }
     // Kontroll pas navigimit: dokumenti kryesor s'duhet të ketë përfunduar në host të ndaluar.
     for (const u of [lhr.finalDisplayedUrl, lhr.mainDocumentUrl]) {

@@ -1,11 +1,13 @@
 import type { AuditContext } from '../../core/context.js';
 import type { AuditResult, IssueDraft } from '../../core/schemas.js';
 import type { CrawledPage } from '../../crawler/crawler.js';
-import { normalizeUrl } from '../../crawler/url-rules.js';
+import { normalizeUrl, SKIP_REASON_LABELS, type SkipReason } from '../../crawler/url-rules.js';
 import { ModuleBuilder } from '../helpers.js';
 import { crawlUnavailable } from './common.js';
 
 const stripSlash = (u: string) => u.replace(/\/$/, '');
+/** Arsye që tregojnë kufi të crawl-it (rezultat i pjesshëm), jo përjashtim me rregull. */
+const LIMIT_REASONS: SkipReason[] = ['max-pages', 'max-depth', 'time-budget', 'crawl-stopped'];
 
 /** Canonical i vetëm që tregon URL tjetër nga ajo e shërbyer (null kur mungon/tregon vetveten/konflikt). */
 export function canonicalElsewhere(p: CrawledPage): string | null {
@@ -160,8 +162,25 @@ export function runSitemap(ctx: AuditContext): AuditResult {
       ? [`${viaSitemapOnly.length} URL nga sitemap-i s'u gjetën me linke brenda kufijve të crawl-it — s'mund të quhen "orphan" pa crawl të plotë.`]
       : undefined);
 
-  const unchecked = internal.length - checked.length - robotsBlocked.length;
-  if (unchecked > 0) m.limitations.push(`Sitemap: ${unchecked} nga ${internal.length} URL s'u kontrolluan (kufiri i faqeve/kohës).`);
+  // URL të sitemap-it që s'u vizituan, me arsyen e saktë nga crawl-i. Rregullat (unsafe/robots/…)
+  // i përjashtojnë me qëllim — s'e bëjnë rezultatin partial; kufijtë (faqe/kohë/thellësi) po.
+  const checkedKeys = new Set(checked.map((x) => x.e.key));
+  const reasonOf = new Map(crawl.notChecked.map((n) => [n.url, n.reason] as const));
+  const unchecked = internal.filter((e) => !checkedKeys.has(e.key)).map((e) => ({ e, reason: reasonOf.get(e.key) }));
+  const byRule = unchecked.filter((x) => x.reason && !LIMIT_REASONS.includes(x.reason));
+  const byLimit = unchecked.filter((x) => !x.reason || LIMIT_REASONS.includes(x.reason));
+  const describe = (list: typeof unchecked) => {
+    const groups = new Map<string, typeof unchecked>();
+    for (const x of list) groups.set(x.reason ?? 'unknown', [...(groups.get(x.reason ?? 'unknown') ?? []), x]);
+    return [...groups]
+      .map(([r, xs]) => `${xs.length} ${r === 'unknown' ? 'pa arsye të regjistruar' : SKIP_REASON_LABELS[r as SkipReason]}: ${xs.slice(0, 5).map((x) => x.e.loc).join(', ')}${xs.length > 5 ? ' …' : ''}`)
+      .join('; ');
+  };
+  if (byRule.length) {
+    m.metric({ id: 'sitemap-urls-excluded-by-rule', label: "URL të sitemap-it të përjashtuara me rregull (s'vizitohen)", value: byRule.length, status: 'measured', source: 'crawl' });
+    m.limitations.push(`Sitemap: ${byRule.length} nga ${internal.length} URL s'u vizituan me qëllim — ${describe(byRule)}.`);
+  }
+  if (byLimit.length) m.limitations.push(`Sitemap: ${byLimit.length} nga ${internal.length} URL s'u kontrolluan nga kufijtë e crawl-it — ${describe(byLimit)}.`);
   if (sm.truncated) m.limitations.push('Sitemap: u arrit kufiri i skedarëve ose i URL-ve; pjesa tjetër s\'u lexua.');
-  return m.build({ coverage: { checked: checked.length, discovered: internal.length, truncated: unchecked > 0 || sm.truncated } });
+  return m.build({ coverage: { checked: checked.length, discovered: internal.length, excludedByRule: byRule.length, truncated: byLimit.length > 0 || sm.truncated } });
 }

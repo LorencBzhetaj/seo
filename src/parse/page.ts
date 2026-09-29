@@ -19,6 +19,11 @@ export interface PageData extends ParsedHtml {
   /** src e iframe-ve (maks. 5): përmbajtja mund të jetë brenda tyre. */
   iframes: string[];
   noindex: boolean;
+  /**
+   * Cloudflare Email Address Obfuscation: linket /cdn-cgi/l/email-protection#<hex> që skripti
+   * email-decode.min.js i kthen në mailto: në browser. S'janë faqe — s'futen te `links`.
+   */
+  cfEmailLinks: { count: number; decoderScript: boolean; sample?: string };
   /** Identifikues i template-it (klasat e body pa ID, ose skeleti i DOM-it), për grupimin e issue-ve. */
   templateKey: string;
 }
@@ -55,12 +60,25 @@ function templateKeyOf($: cheerio.CheerioAPI): string {
   return `dom:${fnv1a(skeleton)}`;
 }
 
+const CF_EMAIL_PATH = /^\/cdn-cgi\/l\/email-protection\/?$/;
+
+/** Dekodon formatin e Cloudflare (bajti i parë = çelësi XOR); null kur s'del adresë email. */
+export function decodeCfEmail(hex: string): string | null {
+  if (!/^(?:[0-9a-f]{2}){2,}$/i.test(hex)) return null;
+  const key = parseInt(hex.slice(0, 2), 16);
+  let out = '';
+  for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out) ? out : null;
+}
+
 export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): PageData {
   const base = parseHtml(html, pageUrl);
   const $ = cheerio.load(html);
   const baseUrl = base.baseHref ? (() => { try { return new URL(base.baseHref!, pageUrl).href; } catch { return pageUrl; } })() : pageUrl;
 
   const links: PageLink[] = [];
+  let cfEmailCount = 0;
+  let cfEmailSample: string | undefined;
   $('a[href]').each((_, el) => {
     const href = ($(el).attr('href') ?? '').trim();
     if (!href || /^(mailto|tel|javascript|data|sms|whatsapp):/i.test(href) || href.startsWith('#')) return;
@@ -71,6 +89,16 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
       return;
     }
     if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return;
+    // Email i fshehur nga Cloudflare: vetëm kur të dhënat dekodohen realisht në adresë email
+    // (në href#hex ose në <span data-cfemail>); përndryshe trajtohet si link i zakonshëm.
+    if (CF_EMAIL_PATH.test(abs.pathname)) {
+      const encoded = [abs.hash.slice(1), $(el).attr('data-cfemail') ?? '', ...$(el).find('[data-cfemail]').map((_, x) => $(x).attr('data-cfemail') ?? '').get()];
+      if (encoded.some((h) => decodeCfEmail(h))) {
+        cfEmailCount++;
+        cfEmailSample ??= href;
+        return;
+      }
+    }
     abs.hash = '';
     links.push({ url: abs.href, text: clean($(el).text()).slice(0, 80) || clean($(el).attr('aria-label') ?? $(el).find('img').attr('alt') ?? '').slice(0, 80), rel: ($(el).attr('rel') ?? '').toLowerCase() });
   });
@@ -99,6 +127,7 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
     .get();
 
   const templateKey = templateKeyOf($);
+  const cfDecoder = $('script[src*="/cdn-cgi/scripts/"][src*="email-decode"]').length > 0;
 
   // iframe-t regjistrohen para heqjes: përmbajtja mund të jetë brenda tyre (p.sh. menu e jashtme).
   const iframes = $('iframe[src]').map((_, el) => $(el).attr('src') ?? '').get().filter(Boolean).slice(0, 5);
@@ -131,6 +160,7 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
     wordCount,
     iframes,
     noindex: metaNoindex || headerNoindex,
+    cfEmailLinks: { count: cfEmailCount, decoderScript: cfDecoder, sample: cfEmailSample },
     templateKey,
   };
 }

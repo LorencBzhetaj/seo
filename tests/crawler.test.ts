@@ -180,13 +180,16 @@ describe('Moduli i linkeve', () => {
     const broken = r.issues.find((i) => i.code === 'BROKEN_INTERNAL_LINK' && i.url!.endsWith('/missing'))!;
     expect(broken.severity).toBe('medium');
     expect(broken.affectedPages.map((u) => new URL(u).pathname).sort()).toEqual(['/', '/contact']);
-    expect(broken.evidence[0]!.detected).toMatch(/^HTTP 404; lidhet nga: .*\("Link i prishur"\)/);
+    expect(broken.evidence[0]!.detected).toMatch(/^HTTP 404; 2 përdorime në 2 faqe; lidhet nga: .*\("Link i prishur"\)/);
     const server = r.issues.find((i) => i.code === 'INTERNAL_LINK_SERVER_ERROR')!;
     expect(server).toMatchObject({ severity: 'high', confidence: 0.8 });
     // /gone-from-sitemap s'ka link: s'është "link i prishur" (e vlerëson moduli Sitemap)
     expect(r.issues.some((i) => i.url?.endsWith('/gone-from-sitemap'))).toBe(false);
     const redirects = r.issues.find((i) => i.code === 'INTERNAL_LINKS_VIA_REDIRECT')!;
-    expect(redirects.affectedPages.some((u) => u.endsWith('/old-page'))).toBe(true);
+    // url = destinacioni që ridrejton; affectedPages = faqet ku duhet ndryshuar linku
+    expect(redirects.url).toMatch(/\/old-page$/);
+    expect(redirects.affectedPages.some((u) => u.endsWith('/old-page'))).toBe(false);
+    expect(redirects.evidence[0]!.detected).toMatch(/\d+ përdorime në \d+ faqe; lidhet nga:/);
     expect(r.issues.find((i) => i.code === 'LINK_TARGET_UNREACHABLE')!.needsManualReview).toBe(true);
     expect(r.score).not.toBeNull();
     for (const i of r.issues) {

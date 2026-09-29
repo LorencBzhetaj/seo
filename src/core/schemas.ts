@@ -79,7 +79,8 @@ export interface AuditResult {
   status: ModuleStatus;
   partial: boolean;
   reason?: string;
-  coverage: { checked: number; discovered: number; truncated: boolean };
+  /** excludedByRule: të zbuluara por të përjashtuara me qëllim (unsafe/robots/…), s'e bëjnë partial. */
+  coverage: { checked: number; discovered: number; truncated: boolean; excludedByRule?: number };
   checks: CheckResult[];
   issues: Issue[];
   metrics: Metric[];

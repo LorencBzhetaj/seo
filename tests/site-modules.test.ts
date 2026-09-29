@@ -117,3 +117,34 @@ describe('i18n (vetëm kur aplikohet)', () => {
     expect(r.score).toBe(100);
   });
 });
+
+describe('Linke: numri i URL-ve destinacion ≠ numri i përdorimeve', () => {
+  const edge = (from: string, to: string, text: string) => ({ from, to, text });
+
+  it('1 URL që ridrejton, e lidhur 4 herë nga 2 faqe → formulim i qartë', async () => {
+    const { runLinks } = await import('../src/modules/site/links.js');
+    const ctx = siteCtx(
+      [
+        home,
+        { url: `${B}/sq/`, finalUrl: `${B}/sq/kryefaqja/`, redirects: [{ url: `${B}/sq/`, status: 301, location: `${B}/sq/kryefaqja/` }], html: htmlPage({ title: 'Kryefaqja' }) },
+        { url: `${B}/a`, html: htmlPage({ title: 'A' }) },
+      ],
+      { edges: [edge(`${B}/`, `${B}/sq/`, 'Logo'), edge(`${B}/`, `${B}/sq/`, 'Kryefaqja'), edge(`${B}/`, `${B}/sq/`, 'Footer'), edge(`${B}/a`, `${B}/sq/`, 'Kryefaqja')] },
+    );
+    const i = runLinks(ctx).issues.find((x) => x.code === 'INTERNAL_LINKS_VIA_REDIRECT')!;
+    expect(i.message).toBe('1 URL e brendshme që ridrejton — linket drejt saj përdoren 4 herë në 2 faqe');
+    expect(i.affectedPages).toEqual([`${B}/`, `${B}/a`]);
+    expect(i.evidence[0]!.detected).toBe(`301 → ${B}/sq/kryefaqja/; 4 përdorime në 2 faqe; lidhet nga: ${B}/ ("Logo") ×3, ${B}/a ("Kryefaqja")`);
+  });
+
+  it('email i fshehur nga Cloudflare: s\'raportohet si link i prishur; mbetet si provë', async () => {
+    const fs = await import('node:fs');
+    const { runLinks } = await import('../src/modules/site/links.js');
+    const cf = fs.readFileSync(new URL('./fixtures/cf-email-protection.html', import.meta.url), 'utf8');
+    const r = runLinks(siteCtx([{ url: `${B}/`, html: cf }, { url: `${B}/contact/`, html: cf }]));
+    expect(r.issues.some((i) => /email-protection/.test(i.url ?? ''))).toBe(false);
+    const c = r.checks.find((x) => x.id === 'cf-email-obfuscation')!;
+    expect(c.observations![0]).toMatch(/^6 linke \/cdn-cgi\/l\/email-protection#95fc\S+ në 2 faqe: Cloudflare Email Address Obfuscation/);
+    expect(c.observations![1]).toBe('Skripti email-decode.min.js u gjet në të gjitha këto faqe');
+  });
+});

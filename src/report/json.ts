@@ -55,8 +55,10 @@ export function buildReport(run: AuditRun) {
           benchmarkIndex: lh.benchmarkIndex,
           finalDisplayedUrl: lh.finalDisplayedUrl,
           blockedRequests: lh.blockedRequests,
+          // Përpjekje të dështuara para rezultatit (p.sh. NO_NAVSTART) — s'fshihen.
+          failedAttempts: lh.failedAttempts ?? [],
         }
-      : { status: ctx?.lighthouse.status, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }) },
+      : { status: ctx?.lighthouse.status, code: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.code : undefined, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }) },
     runId: run.id,
     url: run.url,
     finalUrl: main?.finalUrl,

@@ -73,3 +73,24 @@ describe('parsePage: teksti kryesor', () => {
     expect(p.mainText.startsWith('m0 m1')).toBe(true);
   });
 });
+
+describe('parsePage: Cloudflare Email Address Obfuscation', () => {
+  it('/cdn-cgi/l/email-protection#<hex> s\'është link faqeje (provë reale nga gjecaj.al)', async () => {
+    const fs = await import('node:fs');
+    const { parsePage } = await import('../src/parse/page.js');
+    const html = fs.readFileSync(new URL('./fixtures/cf-email-protection.html', import.meta.url), 'utf8');
+    const p = parsePage(html, 'https://gjecaj.al/');
+    expect(p.links.map((l) => l.url)).toEqual(['https://gjecaj.al/contact/']);
+    expect(p.cfEmailLinks).toEqual({ count: 3, decoderScript: true, sample: '/cdn-cgi/l/email-protection#95fcfbf3fad5f2fff0f6f4ffbbf4f9' });
+  });
+
+  it('dekodimi XOR; të dhëna që s\'dekodohen në email mbeten link i zakonshëm', async () => {
+    const { decodeCfEmail, parsePage } = await import('../src/parse/page.js');
+    expect(decodeCfEmail('95fcfbf3fad5f2fff0f6f4ffbbf4f9')).toBe('info@gjecaj.al');
+    expect(decodeCfEmail('zz')).toBeNull();
+    expect(decodeCfEmail('0102')).toBeNull();
+    const p = parsePage('<html><body><a href="/cdn-cgi/l/email-protection">x</a><a href="/cdn-cgi/l/email-protection#abcd">y</a></body></html>', 'https://e.com/');
+    expect(p.links.map((l) => l.url)).toEqual(['https://e.com/cdn-cgi/l/email-protection', 'https://e.com/cdn-cgi/l/email-protection']);
+    expect(p.cfEmailLinks.count).toBe(0);
+  });
+});

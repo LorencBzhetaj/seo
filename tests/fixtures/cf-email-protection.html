@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Provë (2026-09-29), fragment i shkurtuar nga HTML-ja e shërbyer e https://gjecaj.al/ (curl -4, lexim):
+  - href="/cdn-cgi/l/email-protection#<hex>", <span class="__cf_email__" data-cfemail="<hex>"> brenda linkut,
+    ose <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="<hex>"> (pa #hex, te /gift-cards/)
+  - skripti /cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js
+  - GET /cdn-cgi/l/email-protection pa JS → HTTP 404 (kjo u raportua gabimisht si BROKEN_INTERNAL_LINK)
+  - Në browser (Chrome): 0 linke /cdn-cgi/l/email-protection, 4 linke "mailto:info@gjecaj.al" — skripti i dekodon.
+  Hex-i dekodohet (bajti i parë = çelësi XOR) në info@gjecaj.al, adresë publike e faqes.
+-->
+<html lang="en"><head><title>Fixture</title></head>
+<body>
+<footer>
+<a href="/cdn-cgi/l/email-protection#95fcfbf3fad5f2fff0f6f4ffbbf4f9">Email</a>
+<a href="/cdn-cgi/l/email-protection#274e49414867404d4244464d09464b"><span class="__cf_email__" data-cfemail="264f48404966414c4345474c08474a">[email&#160;protected]</span></a>
+<!-- Varianti nga https://gjecaj.al/gift-cards/: data-cfemail në vetë <a>, pa #hex -->
+<p>Contact us at <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="2841464e47684f424d4b4942064944">[email&#160;protected]</a></p>
+<a href="/contact/">Contact</a>
+</footer>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
+</body></html>

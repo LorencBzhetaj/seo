@@ -58,6 +58,10 @@ Raporti e emërton skedarin te `lighthouse.lhrFile`. LHR-ja shërben për të ve
 
 > ⚠️ **LHR-ja mund të përmbajë të dhëna të faqes që s'duhen shpërndarë pa kontroll:** URL të plota (edhe me query), listën e kërkesave të rrjetit dhe palët e treta, fragmente HTML dhe tekst të elementeve, si dhe screenshot-e të faqes në base64. Mbetet vetëm lokalisht te `output/`, që është jashtë Git. Mos e ngarko dhe mos e ndaj pa e shqyrtuar.
 
+### Lighthouse NO_NAVSTART (shkak ende i papërcaktuar)
+
+Herë pas here Lighthouse dështon me `NO_NAVSTART`: trace-i i Chrome s'ka eventin `navigationStart` të frame-it kryesor, ndonëse faqja ngarkohet normalisht (HTTP 200, të njëjtat kërkesa). Ndodh edhe me `--no-crawl`, pra s'e shkakton crawl-i. Pse Chrome e humb eventin **s'është përcaktuar ende** (as roli i mundshëm i guard proxy-t). Vetëm për `NO_NAVSTART` / `NO_TRACING_STARTED` bëhet **një** riprovim; çdo përpjekje e dështuar ruhet te `lighthouse.failedAttempts` dhe shfaqet në terminal. Nëse dështojnë të dyja, Health Score del `PARTIAL` dhe `lighthouse.code` e emërton gabimin.
+
 ## Çfarë kontrollon MVP-1
 
 | Kategoria | Kontrollet | Burimi |
