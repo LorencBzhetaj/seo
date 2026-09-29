@@ -1,5 +1,5 @@
 import type { AuditReport } from './json.js';
-import { CATEGORY_LABELS, type CategoryKey, type Severity } from '../core/schemas.js';
+import { CATEGORY_LABELS, SITE_CATEGORY_LABELS, type CategoryKey, type Issue, type Severity, type SiteCategoryKey } from '../core/schemas.js';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = (code: number) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -29,7 +29,7 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
   const host = new URL(report.finalUrl ?? report.url).host;
 
   out.push(`┌${line}┐`);
-  out.push(` WEBSITE AUDIT — ${bold(host)}  ${dim(`(MVP-1, faqja hyrëse, mobile)`)}`);
+  out.push(` WEBSITE AUDIT — ${bold(host)}  ${dim(`(faqja hyrëse: MVP-1, mobile · site: crawl)`)}`);
   const access = report.access;
   if (access && access.state !== 'ok' && access.state !== 'unreachable') {
     out.push('');
@@ -69,15 +69,9 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
     out.push(` ${fmt('lcp', 'LCP')} · ${fmt('cls', 'CLS')} · ${fmt('tbt', 'TBT')} · INP ${dim('unavailable (pa field data)')}`);
   }
   out.push(`├${line}┤`);
-  out.push(` ${bold('TOP IMPROVEMENTS')}`);
-  if (report.issues.length === 0) out.push(dim('  Asnjë issue nga kontrollet e kryera.'));
-  report.issues.slice(0, 5).forEach((i, idx) => {
-    out.push(` ${idx + 1}. ${SEV_ICON[i.severity]} ${bold(truncate(i.message, 54))}  ${dim(`[${i.code}, p=${i.priority}${i.needsManualReview ? ', verifiko' : ''}]`)}`);
-    const ev = i.evidence[0];
-    if (ev) out.push(`    ${dim('provë:')} ${truncate(ev.detected, 90)}`);
-    out.push(`    ${dim('fix:')}   ${truncate(i.fix, 90)}`);
-  });
-  if (report.issues.length > 5) out.push(dim(`  … +${report.issues.length - 5} issue të tjera në raportin JSON`));
+  out.push(` ${bold('TOP IMPROVEMENTS — FAQJA HYRËSE')}`);
+  out.push(...issueLines(report.issues));
+  out.push(...siteLines(report, line));
   out.push(`├${line}┤`);
   out.push(` ${bold('KUFIZIME')}`);
   for (const l of report.limitations.slice(0, 6)) out.push(dim(`  • ${truncate(l, 110)}`));
@@ -85,4 +79,52 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
   out.push(`└${line}┘`);
   if (reportPath) out.push(`Raporti JSON: ${reportPath}`);
   return out.join('\n');
+}
+
+function issueLines(issues: Issue[]): string[] {
+  const out: string[] = [];
+  if (issues.length === 0) out.push(dim('  Asnjë issue nga kontrollet e kryera.'));
+  issues.slice(0, 5).forEach((i, idx) => {
+    const pages = i.affectedPages.length > 1 ? `, ${i.affectedPages.length} faqe` : '';
+    out.push(` ${idx + 1}. ${SEV_ICON[i.severity]} ${bold(truncate(i.message, 54))}  ${dim(`[${i.code}, p=${i.priority}${pages}${i.needsManualReview ? ', verifiko' : ''}]`)}`);
+    const ev = i.evidence[0];
+    if (ev) out.push(`    ${dim('provë:')} ${truncate(ev.detected, 90)}`);
+    out.push(`    ${dim('fix:')}   ${truncate(i.fix, 90)}`);
+  });
+  if (issues.length > 5) out.push(dim(`  … +${issues.length - 5} issue të tjera në raportin JSON`));
+  return out;
+}
+
+/** Seksioni i crawl-it (MVP-2), i ndarë qartë nga faqja hyrëse. */
+function siteLines(report: AuditReport, line: string): string[] {
+  const site = report.site;
+  const out = [`├${line}┤`, ` ${bold('SITE — CRAWL I KUFIZUAR (MVP-2)')}  ${dim("s'hyn në Health Score-in e faqes hyrëse")}`];
+  if (site.status === 'skipped' || !('crawl' in site) || !site.crawl) {
+    out.push(yellow(`  skipped: ${'reason' in site ? site.reason : ''}`));
+    return out;
+  }
+  const c = site.crawl;
+  const l = c.limits;
+  out.push(` ${c.pagesRequested} faqe të kërkuara (${c.pagesAnalyzed} HTML të analizuara) · ${c.urlsDiscovered} URL të brendshme të zbuluara${site.status === 'partial' ? yellow(' (partial)') : ''}`);
+  out.push(dim(` kufij: maks ${l.maxPages} faqe · thellësi ${l.maxDepth} · concurrency ${l.concurrency} · ${l.requestDelayMs} ms/host · ${(c.durationMs / 1000).toFixed(1)}s`));
+  if (c.notCheckedTotal) {
+    const reasons = Object.values(c.notCheckedByReason).map((r) => `${r.count} ${r.meaning}`).join('; ');
+    out.push(dim(` pa kontroll: ${c.notCheckedTotal} — ${truncate(reasons, 100)}`));
+  }
+  if (c.stopReason) out.push(yellow(` ${c.stopReason}`));
+  out.push(yellow(` ${site.scopeNote}`));
+  for (const [k, v] of Object.entries(site.categories) as [SiteCategoryKey, number | null][]) {
+    const mod = report.modules.find((m) => m.category === k);
+    const cov = site.categoryCoverage[k];
+    const note =
+      v === null
+        ? dim(` ${mod?.status === 'not_applicable' ? 'n/a' : 'skipped'}: ${truncate(mod?.reason ?? 'ende pa implementuar', 40)}`)
+        : cov?.partial
+          ? yellow(` partial — vetëm ${cov.checked}/${cov.discovered} URL, jo për gjithë sitin`)
+          : '';
+    out.push(` ${SITE_CATEGORY_LABELS[k].padEnd(28)} ${scoreColor(v)}${note}`);
+  }
+  out.push(` ${bold('TOP — GJETJE PËR SHUMË FAQE')}`);
+  out.push(...issueLines(site.issues));
+  return out;
 }

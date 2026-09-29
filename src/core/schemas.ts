@@ -72,7 +72,9 @@ export type ModuleStatus = 'pass' | 'warning' | 'fail' | 'not_applicable' | 'ski
 
 export interface AuditResult {
   module: string;
-  category: CategoryKey;
+  category: CategoryKey | SiteCategoryKey;
+  /** homepage = MVP-1 (faqja hyrëse); site = gjetje nga crawl-i (MVP-2). */
+  section: 'homepage' | 'site';
   score: number | null;
   status: ModuleStatus;
   partial: boolean;
@@ -91,6 +93,22 @@ export type CategoryKey =
   | 'seoTechnical'
   | 'security'
   | 'availability';
+
+/** Kategoritë e MVP-2 (crawl): gjetje për shumë faqe, jashtë Health Score-it të faqes hyrëse. */
+export type SiteCategoryKey = 'links' | 'sitemap' | 'duplicates' | 'contentSeo' | 'caching' | 'i18n';
+
+export const SITE_CATEGORY_LABELS: Record<SiteCategoryKey, string> = {
+  links: 'Linke të brendshme',
+  sitemap: 'Sitemap',
+  duplicates: 'Dyfishime & canonical',
+  contentSeo: 'SEO on-page (faqet e tjera)',
+  caching: 'Compression/caching (HTML)',
+  i18n: 'i18n (hreflang/lang)',
+};
+
+export function isSiteCategory(c: string): c is SiteCategoryKey {
+  return c in SITE_CATEGORY_LABELS;
+}
 
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {
   performance: 'Performance (mobile, lab)',

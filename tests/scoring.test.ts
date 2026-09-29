@@ -14,7 +14,7 @@ function draft(over: Partial<IssueDraft> = {}): IssueDraft {
 
 function moduleResult(category: CategoryKey, score: number | null, issues: Issue[] = [], reason?: string): AuditResult {
   return {
-    module: category, category, score, status: score === null ? 'skipped' : 'pass', partial: false, reason,
+    module: category, category, section: 'homepage', score, status: score === null ? 'skipped' : 'pass', partial: false, reason,
     coverage: { checked: score === null ? 0 : 5, discovered: 5, truncated: false }, checks: [], issues, metrics: [], limitations: [],
   };
 }

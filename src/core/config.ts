@@ -26,7 +26,28 @@ export interface AuditConfig {
    */
   allowedPrivateHosts: string[];
   outputDir: string;
+  /** Crawler-i i MVP-2 (§7, §13). */
+  crawl: {
+    enabled: boolean;
+    /** Kërkesa maksimale për faqe (përfshirë faqen hyrëse). */
+    maxPages: number;
+    /** Thellësia maksimale e linkeve nga faqja hyrëse (0). */
+    maxDepth: number;
+    concurrency: number;
+    /** Kufi kohor i gjithë crawl-it (ms). */
+    maxDurationMs: number;
+    /** Modele shtesë (substring në path) që s'vizitohen; rregullat e sigurisë të integruara zbatohen gjithmonë. */
+    excludePatterns: string[];
+    /** Sa URL nga sitemap-i lexohen gjithsej, dhe sa sitemap-e (index → fëmijë). */
+    maxSitemapUrls: number;
+    maxSitemaps: number;
+  };
 }
+
+/** Kufiri i sipërm i lejuar për --max-pages (përdorim personal, i kujdesshëm me serverin). */
+export const MAX_PAGES_HARD_LIMIT = 100;
+/** Vonesa minimale mes kërkesave te i njëjti host për site të jashtme (§13). */
+export const MIN_REQUEST_DELAY_MS = 500;
 
 export const DEFAULT_CONFIG: AuditConfig = {
   timeout: 10_000,
@@ -43,6 +64,16 @@ export const DEFAULT_CONFIG: AuditConfig = {
   },
   allowedPrivateHosts: [],
   outputDir: 'output',
+  crawl: {
+    enabled: true,
+    maxPages: 25,
+    maxDepth: 3,
+    concurrency: 2,
+    maxDurationMs: 180_000,
+    excludePatterns: ['/wp-admin', '/cart', '/checkout'],
+    maxSitemapUrls: 5000,
+    maxSitemaps: 10,
+  },
 };
 
 /** Shkrin config.json (opsional) mbi parazgjedhjet. Sekretet nuk mbahen këtu. */
@@ -58,6 +89,7 @@ export function loadConfig(configPath?: string, overrides: Partial<AuditConfig> 
     ...DEFAULT_CONFIG,
     ...fileConfig,
     ...overrides,
+    crawl: { ...DEFAULT_CONFIG.crawl, ...(fileConfig.crawl ?? {}), ...(overrides.crawl ?? {}) },
     lighthouse: {
       ...DEFAULT_CONFIG.lighthouse,
       ...(fileConfig.lighthouse ?? {}),

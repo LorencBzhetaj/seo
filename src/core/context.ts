@@ -1,11 +1,13 @@
-import type { AuditConfig } from './config.js';
+import { MIN_REQUEST_DELAY_MS, type AuditConfig } from './config.js';
+import { crawlSite, type CrawlResult } from '../crawler/crawler.js';
+import { fetchSitemaps, type SitemapData } from '../crawler/sitemaps.js';
 import { FetchError, HostThrottle, safeFetch, type FetchOptions, type FetchResult } from '../net/safe-fetch.js';
 import { inspectTls, type TlsInfo } from '../net/tls-info.js';
-import { assertUrlAllowed, BlockedUrlError, normalizeInputUrl } from '../net/url-guard.js';
+import { assertUrlAllowed, BlockedUrlError, isExplicitlyAllowed, normalizeInputUrl } from '../net/url-guard.js';
 import { isAllowed, parseRobots, type ParsedRobots } from '../parse/robots.js';
 import { parseHtml, type ParsedHtml } from '../parse/html.js';
 import type { LighthouseData } from '../lighthouse/run-lighthouse.js';
-import { classifyAccess, isSuccess, type AccessInfo } from './access.js';
+import { classifyAccess, isHtml, isSuccess, type AccessInfo } from './access.js';
 
 /** Rezultat i një mbledhjeje të dhënash: ok, gabim (me kod), ose e anashkaluar me arsye. */
 export type Probe<T> =
@@ -32,6 +34,9 @@ export interface AuditContext {
   httpVariant: Probe<FetchResult>;
   tls: Probe<TlsInfo>;
   canonicalTarget: Probe<FetchResult>;
+  /** MVP-2: sitemap-et dhe crawl-i (gjetje për shumë faqe). */
+  sitemaps: Probe<SitemapData>;
+  crawl: Probe<CrawlResult>;
   lighthouse: Probe<LighthouseData>;
 }
 
@@ -67,10 +72,7 @@ async function probe<T>(fn: () => Promise<T>): Promise<Probe<T>> {
   }
 }
 
-export function isHtml(res: FetchResult): boolean {
-  const ct = res.headers['content-type'] ?? '';
-  return /text\/html|application\/xhtml\+xml/i.test(ct) || (!ct && /<html[\s>]/i.test(res.body.slice(0, 2000)));
-}
+export { isHtml } from './access.js';
 
 export interface CollectHooks {
   onStep?: (step: string) => void;
@@ -84,7 +86,9 @@ export interface CollectHooks {
 export async function collectContext(input: string, config: AuditConfig, hooks: CollectHooks = {}): Promise<AuditContext> {
   const url = normalizeInputUrl(input);
   assertUrlAllowed(url, config.allowedPrivateHosts);
-  const throttle = new HostThrottle(config.requestDelay);
+  // Për site të jashtme vonesa s'bie nën 500 ms për host (§13); më e ulët vetëm për fixtures lokale.
+  const delay = isExplicitlyAllowed(url, config.allowedPrivateHosts) ? config.requestDelay : Math.max(MIN_REQUEST_DELAY_MS, config.requestDelay);
+  const throttle = new HostThrottle(delay);
   const opts = fetchOptions(config, throttle);
   const step = hooks.onStep ?? (() => {});
 
@@ -155,7 +159,25 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
     }
   }
 
-  // 6. Lighthouse mobile për faqen hyrëse
+  // 6–7. MVP-2: sitemap-et dhe crawl-i, vetëm kur faqja hyrëse u mor realisht (2xx)
+  let sitemaps: Probe<SitemapData>;
+  let crawl: Probe<CrawlResult>;
+  if (!config.crawl.enabled) {
+    sitemaps = crawl = { status: 'skipped', reason: 'Crawl-i u çaktivizua (--no-crawl)' };
+  } else if (main.status !== 'ok' || access.state !== 'ok') {
+    sitemaps = crawl = { status: 'skipped', reason: `Crawl-i s'u nis: faqja hyrëse s'u mor realisht (${access.summary})` };
+  } else {
+    const parsedRobots = robots.status === 'ok' ? robots.value.parsed : undefined;
+    step('sitemap');
+    sitemaps = await probe(() => fetchSitemaps(finalUrl, parsedRobots, config, opts));
+    step(`crawl (maks. ${config.crawl.maxPages} faqe, thellësi ${config.crawl.maxDepth})`);
+    const sitemapUrls = sitemaps.status === 'ok' ? sitemaps.value.urls.filter((u) => u.internal).map((u) => u.key) : [];
+    crawl = await probe(() =>
+      crawlSite({ root: main.value, robots: parsedRobots, config, fetchOptions: opts, sitemapUrls, onProgress: (m) => step(`  ${m}`) }),
+    );
+  }
+
+  // 8. Lighthouse mobile për faqen hyrëse
   let lighthouse: Probe<LighthouseData>;
   if (!config.lighthouse.enabled) lighthouse = { status: 'skipped', reason: 'Lighthouse u çaktivizua (--no-lighthouse)' };
   else if (main.status !== 'ok') lighthouse = { status: 'skipped', reason: 'Faqja hyrëse s\'u arrit; Lighthouse s\'u ekzekutua' };
@@ -165,5 +187,5 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
     lighthouse = await probe(() => hooks.runLighthouse!(url.href, config));
   }
 
-  return { url: url.href, config, robots, main, access, html, httpVariant, tls, canonicalTarget, lighthouse };
+  return { url: url.href, config, robots, main, access, html, httpVariant, tls, canonicalTarget, sitemaps, crawl, lighthouse };
 }

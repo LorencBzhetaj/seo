@@ -13,6 +13,11 @@ export interface FetchOptions {
   allowedPrivateHosts: readonly string[];
   followRedirects?: boolean;
   throttle?: HostThrottle;
+  /**
+   * Politikë për ridrejtimet: kthen arsyen pse hop-i i radhës s'duhet ndjekur (p.sh. robots,
+   * URL e pasigurt, host tjetër), ose null. Kur ndalet, kthehet përgjigjja 3xx me `redirectNotFollowed`.
+   */
+  redirectPolicy?: (next: URL) => string | null;
 }
 
 export interface RedirectHop {
@@ -36,6 +41,8 @@ export interface FetchResult {
   totalMs: number;
   remoteAddress?: string;
   httpVersion: string;
+  /** Ridrejtimi i fundit s'u ndoq sipas redirectPolicy (Location dhe arsyeja). */
+  redirectNotFollowed?: { location: string; reason: string };
 }
 
 export type FetchErrorCode =
@@ -56,15 +63,24 @@ export class FetchError extends Error {
 
 /** Vonesë minimale mes kërkesave drejt të njëjtit host. */
 export class HostThrottle {
-  private last = new Map<string, number>();
-  constructor(private readonly delayMs: number) {}
+  /** Për çdo host: premtimi që zgjidhet me kohën reale kur u lëshua kërkesa e fundit. */
+  private chain = new Map<string, Promise<number>>();
+  constructor(readonly delayMs: number) {}
+  /**
+   * Radhë për host: çdo thirrje zë vendin sinkronisht dhe lëshohet ≥ `delayMs` pas kohës REALE
+   * të lëshimit të mëparshëm (jo asaj të planifikuar), që një timer i vonuar të mos e ngushtojë
+   * hapësirën me kërkesën pasardhëse — edhe me concurrency > 1.
+   */
   async wait(host: string): Promise<void> {
-    const prev = this.last.get(host);
-    const now = Date.now();
-    if (prev !== undefined && now - prev < this.delayMs) {
-      await new Promise((r) => setTimeout(r, this.delayMs - (now - prev)));
-    }
-    this.last.set(host, Date.now());
+    const prev = this.chain.get(host);
+    const mine = (prev ?? Promise.resolve(Number.NEGATIVE_INFINITY)).then(async (prevAt) => {
+      for (let remaining = prevAt + this.delayMs - Date.now(); remaining > 0; remaining = prevAt + this.delayMs - Date.now()) {
+        await new Promise((r) => setTimeout(r, remaining));
+      }
+      return Date.now();
+    });
+    this.chain.set(host, mine);
+    await mine;
   }
 }
 
@@ -234,6 +250,15 @@ export async function safeFetch(input: string | URL, opts: FetchOptions): Promis
       }
       next.hash = '';
       redirects.push({ url: current.href, status: res.status, location: next.href });
+      const veto = opts.redirectPolicy?.(next);
+      if (veto) {
+        const headers = sanitizeHeaders(res.rawHeaders);
+        return {
+          requestedUrl, finalUrl: current.href, status: res.status, statusText: res.statusText, headers, body: '', bodyTruncated: false, bodyBytes: 0,
+          redirects, ttfbMs: Math.round(res.ttfbMs), totalMs: Math.round(performance.now() - chainStart), remoteAddress: res.remoteAddress,
+          httpVersion: res.httpVersion, redirectNotFollowed: { location: next.href, reason: veto },
+        };
+      }
       if (hop + 1 > opts.maxRedirects) {
         throw new FetchError(`Më shumë se ${opts.maxRedirects} ridrejtime`, 'TOO_MANY_REDIRECTS', requestedUrl, redirects);
       }

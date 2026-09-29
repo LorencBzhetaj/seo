@@ -1,8 +1,9 @@
 import type { AuditResult, CategoryKey, HealthModifier, HealthResult, Issue } from '../core/schemas.js';
-import { CATEGORY_LABELS } from '../core/schemas.js';
+import { CATEGORY_LABELS, isSiteCategory } from '../core/schemas.js';
 
 export const SCORING_VERSION = '1.0';
-export const RULESET_VERSION = '2026.09-mvp1';
+/** mvp2: shtohen modulet e site-it; formula e Health Score-it të faqes hyrëse s'ndryshon (scoringVersion 1.0). */
+export const RULESET_VERSION = '2026.09-mvp2';
 
 /** Peshat e kategorive (heuristikë e versionuar; do të rishikohen pas validimit të MVP-1). */
 export const CATEGORY_WEIGHTS: Record<CategoryKey, number> = {
@@ -24,10 +25,11 @@ export const CONFIRMED_CONFIDENCE = 0.9;
 export function categoryScores(results: AuditResult[]): Record<CategoryKey, number | null> {
   const out = Object.fromEntries(Object.keys(CATEGORY_WEIGHTS).map((k) => [k, null])) as Record<CategoryKey, number | null>;
   for (const r of results) {
+    if (r.section === 'site' || isSiteCategory(r.category)) continue; // crawl-i s'hyn në Health të faqes hyrëse
     // Një modul për kategori në MVP-1; nëse do të ketë më shumë, mesatare e thjeshtë e atyre me score.
-    const prev = out[r.category];
+    const prev = out[r.category as CategoryKey];
     if (r.score === null) continue;
-    out[r.category] = prev === null ? r.score : Math.round((prev + r.score) / 2);
+    out[r.category as CategoryKey] = prev === null ? r.score : Math.round((prev + r.score) / 2);
   }
   return out;
 }
@@ -85,7 +87,7 @@ export function computeHealth(results: AuditResult[], issues: Issue[]): HealthRe
     limitations.push(`${unconfirmed.length} issue critical pa konfirmim të plotë (confidence < ${CONFIRMED_CONFIDENCE}) — nuk aktivizojnë kufizimin e pikëve; verifikoji manualisht.`);
   }
 
-  const coverage = results.reduce(
+  const coverage = results.filter((r) => r.section !== 'site').reduce(
     (acc, r) => ({ checked: acc.checked + r.coverage.checked, discovered: acc.discovered + r.coverage.discovered, truncated: acc.truncated || r.coverage.truncated }),
     { checked: 0, discovered: 0, truncated: false },
   );

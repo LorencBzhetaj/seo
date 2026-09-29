@@ -9,6 +9,8 @@ import { parseHtml } from '../src/parse/html.js';
 import { parseRobots } from '../src/parse/robots.js';
 import type { LighthouseData } from '../src/lighthouse/run-lighthouse.js';
 import type { TlsInfo } from '../src/net/tls-info.js';
+import type { CrawlResult } from '../src/crawler/crawler.js';
+import type { SitemapData } from '../src/crawler/sitemaps.js';
 
 export const fixture = (name: string) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', name), 'utf8');
 
@@ -41,6 +43,8 @@ export interface CtxOptions {
   tls?: Probe<TlsInfo>;
   canonicalTarget?: Probe<FetchResult>;
   lighthouse?: Probe<LighthouseData>;
+  sitemaps?: Probe<SitemapData>;
+  crawl?: Probe<CrawlResult>;
 }
 
 /** Ndërton AuditContext pa rrjet, për të testuar modulet mbi fixtures. */
@@ -75,6 +79,8 @@ export function makeCtx(o: CtxOptions = {}): AuditContext {
     httpVariant: o.httpVariant ?? { status: 'ok', value: fetchResult({ requestedUrl: 'http://example.com/', finalUrl: url, redirects: [{ url: 'http://example.com/', status: 301, location: url }] }) },
     tls: o.tls ?? { status: 'ok', value: { host: 'example.com', authorized: true, daysRemaining: 80, validTo: '2026-12-17T00:00:00.000Z', issuer: 'Test CA' } },
     canonicalTarget: o.canonicalTarget ?? { status: 'skipped', reason: 'n/a' },
+    sitemaps: o.sitemaps ?? { status: 'skipped', reason: 'Crawl-i u çaktivizua (test)' },
+    crawl: o.crawl ?? { status: 'skipped', reason: 'Crawl-i u çaktivizua (test)' },
     lighthouse: o.lighthouse ?? { status: 'skipped', reason: 'Lighthouse u çaktivizua (test)' },
   };
 }

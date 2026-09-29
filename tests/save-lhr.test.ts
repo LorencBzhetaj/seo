@@ -24,7 +24,7 @@ function makeRun(rawLhr?: unknown): AuditRun {
   const issues = results.flatMap((r) => r.issues);
   return {
     id: 'test-run', url: ctx.url, startedAt: '2026-09-28T18:07:45.123Z', completedAt: '2026-09-28T18:08:10.000Z', status: 'completed',
-    config: ctx.config, context: ctx, results, issues, categories: categoryScores(results), health: computeHealth(results, issues),
+    config: ctx.config, context: ctx, results, issues, siteIssues: [], categories: categoryScores(results), health: computeHealth(results, issues),
     scoringVersion: '1.0', ruleSetVersion: 'test',
   };
 }

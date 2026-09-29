@@ -1,4 +1,5 @@
-import type { AuditResult, CategoryKey, CheckResult, Issue, IssueDraft, Metric, Severity } from '../core/schemas.js';
+import { isSiteCategory } from '../core/schemas.js';
+import type { AuditResult, CategoryKey, SiteCategoryKey, CheckResult, Issue, IssueDraft, Metric, Severity } from '../core/schemas.js';
 import { finalizeIssue } from '../intelligence/priority.js';
 
 /** Sa "vlen" një kontroll sipas issue-s më të rëndë (0..1). Heuristikë e versionuar me ruleSetVersion. */
@@ -15,7 +16,7 @@ export class ModuleBuilder {
   readonly metrics: Metric[] = [];
   readonly limitations: string[] = [];
 
-  constructor(readonly module: string, readonly category: CategoryKey) {}
+  constructor(readonly module: string, readonly category: CategoryKey | SiteCategoryKey) {}
 
   /** Kontroll i kryer: pass nëse s'ka issue, përndryshe warning/fail sipas rëndësisë. */
   check(id: string, label: string, weight: number, drafts: IssueDraft[] = [], observations?: string[]): CheckResult {
@@ -66,7 +67,11 @@ export class ModuleBuilder {
     this.metrics.push(m);
   }
 
-  build(scoreOverride?: { score: number | null; reason?: string; coverage?: AuditResult['coverage'] }): AuditResult {
+  /**
+   * `score` (edhe null) mbishkruan pikëzimin nga checks; `coverage` me `truncated: true`
+   * e shënon modulin partial (p.sh. crawl-i s'arriti të gjitha URL-të).
+   */
+  build(scoreOverride?: { score?: number | null; reason?: string; coverage?: AuditResult['coverage'] }): AuditResult {
     const scored = this.checks.filter((c) => c.score !== null && c.weight > 0);
     const skipped = this.checks.filter((c) => c.status === 'skipped');
     const applicable = this.checks.filter((c) => c.status !== 'not_applicable' && c.status !== 'info');
@@ -74,10 +79,8 @@ export class ModuleBuilder {
     let score =
       totalWeight > 0 ? Math.round((scored.reduce((s, c) => s + c.weight * (c.score as number), 0) / totalWeight) * 100) : null;
     let reason: string | undefined;
-    if (scoreOverride) {
-      score = scoreOverride.score;
-      reason = scoreOverride.reason;
-    }
+    if (scoreOverride && 'score' in scoreOverride) score = scoreOverride.score ?? null;
+    if (scoreOverride?.reason) reason = scoreOverride.reason;
 
     let status: AuditResult['status'];
     if (score === null) {
@@ -88,15 +91,17 @@ export class ModuleBuilder {
       status = score >= 90 ? 'pass' : score >= 50 ? 'warning' : 'fail';
     }
 
-    const partial = score !== null && skipped.length > 0;
+    const truncated = scoreOverride?.coverage?.truncated ?? false;
+    const partial = score !== null && (skipped.length > 0 || truncated);
     const limitations = [...this.limitations];
-    if (partial) {
+    if (partial && skipped.length > 0) {
       limitations.push(`${this.module}: ${skipped.length} kontroll(e) skipped — ${skipped.map((c) => `${c.id} (${c.reason})`).join('; ')}`);
     }
 
     return {
       module: this.module,
       category: this.category,
+      section: isSiteCategory(this.category) ? 'site' : 'homepage',
       score,
       status,
       partial,
@@ -115,10 +120,11 @@ export function uniq<T>(xs: T[]): T[] {
 }
 
 /** Rezultat për modul që dështoi krejtësisht (p.sh. exception): nuk fshin modulet e tjera. */
-export function failedModule(module: string, category: CategoryKey, reason: string): AuditResult {
+export function failedModule(module: string, category: CategoryKey | SiteCategoryKey, reason: string): AuditResult {
   return {
     module,
     category,
+    section: isSiteCategory(category) ? 'site' : 'homepage',
     score: null,
     status: 'skipped',
     partial: false,

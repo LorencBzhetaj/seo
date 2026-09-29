@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { loadConfig } from './core/config.js';
+import { loadConfig, MAX_PAGES_HARD_LIMIT } from './core/config.js';
 import { RobotsBlockedError } from './core/context.js';
 import { executeAudit, type RunStatus } from './core/run.js';
 import { runLighthouse } from './lighthouse/run-lighthouse.js';
@@ -11,13 +11,17 @@ import { renderTerminal } from './report/terminal.js';
 
 const HELP = `Përdorimi: website-audit <url> [opsione]
 
-Audit MVP-1 i faqes hyrëse: availability, SEO teknik, security headers/HTTPS/TLS,
-Lighthouse mobile (performance, accessibility, best practices). Raporti JSON ruhet lokalisht.
+Faqja hyrëse (MVP-1): availability, SEO teknik, security headers/HTTPS/TLS, Lighthouse mobile.
+Site (MVP-2): crawl i kufizuar (robots.txt, pa login/cart/checkout), linke të prishura, sitemap,
+dyfishime/canonical, SEO on-page, compression, i18n. Raporti JSON ruhet lokalisht.
 
 Opsione:
   --out <dir>             Dosja e raporteve (parazgjedhje: output/)
   --config <file>         Config JSON (parazgjedhje: ./config.json nëse ekziston)
   --no-lighthouse         Mos ekzekuto Lighthouse (performance/accessibility → skipped)
+  --no-crawl              Vetëm faqja hyrëse (MVP-1), pa crawl/sitemap
+  --max-pages <n>         Faqe maksimale për crawl (parazgjedhje 25, maks. 100)
+  --max-depth <n>         Thellësia maksimale e linkeve (parazgjedhje 3)
   --chrome-path <path>    Rruga e Chrome/Chromium për Lighthouse
   --save-lhr              Ruaj edhe LHR-në e plotë të Lighthouse në dosjen e raporteve
                           ({raporti}.lhr.json). Mund të përmbajë URL/të dhëna të faqes.
@@ -38,6 +42,9 @@ async function main(): Promise<number> {
       'chrome-path': { type: 'string' },
       'ignore-robots': { type: 'boolean', default: false },
       'save-lhr': { type: 'boolean', default: false },
+      'no-crawl': { type: 'boolean', default: false },
+      'max-pages': { type: 'string' },
+      'max-depth': { type: 'string' },
       'allow-local': { type: 'string' },
       json: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
@@ -50,6 +57,21 @@ async function main(): Promise<number> {
   }
 
   const base = loadConfig(values.config);
+  const intArg = (name: string, v: string | undefined, min: number, max: number): number | undefined => {
+    if (v === undefined) return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw new RangeError(`--${name} duhet të jetë numër i plotë ${min}–${max}`);
+    return n;
+  };
+  let maxPages: number | undefined;
+  let maxDepth: number | undefined;
+  try {
+    maxPages = intArg('max-pages', values['max-pages'], 1, MAX_PAGES_HARD_LIMIT);
+    maxDepth = intArg('max-depth', values['max-depth'], 0, 10);
+  } catch (err) {
+    console.error((err as Error).message);
+    return 2;
+  }
   const config = {
     ...base,
     outputDir: values.out ?? base.outputDir,
@@ -57,6 +79,12 @@ async function main(): Promise<number> {
     allowedPrivateHosts: values['allow-local']
       ? values['allow-local'].split(',').map((s) => s.trim()).filter(Boolean)
       : base.allowedPrivateHosts,
+    crawl: {
+      ...base.crawl,
+      enabled: values['no-crawl'] ? false : base.crawl.enabled,
+      maxPages: Math.min(maxPages ?? base.crawl.maxPages, MAX_PAGES_HARD_LIMIT),
+      maxDepth: maxDepth ?? base.crawl.maxDepth,
+    },
     lighthouse: {
       ...base.lighthouse,
       enabled: values['no-lighthouse'] ? false : base.lighthouse.enabled,
@@ -67,7 +95,7 @@ async function main(): Promise<number> {
 
   const log = (msg: string) => process.stderr.write(`${msg}\n`);
   const statusText: Partial<Record<RunStatus, string>> = {
-    crawling: 'mbledhje të dhënash (vetëm faqja hyrëse, pa crawl)…',
+    crawling: 'mbledhje të dhënash (faqja hyrëse, pastaj crawl i kufizuar)…',
     auditing: 'auditim…',
     scoring: 'pikëzim…',
   };

@@ -46,6 +46,11 @@ function textSnippet(body: string): string | undefined {
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 
+export function isHtml(res: FetchResult): boolean {
+  const ct = res.headers['content-type'] ?? '';
+  return /text\/html|application\/xhtml\+xml/i.test(ct) || (!ct && /<html[\s>]/i.test(res.body.slice(0, 2000)));
+}
+
 export function isSuccess(status: number): boolean {
   return status >= 200 && status < 300;
 }

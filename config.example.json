@@ -12,5 +12,15 @@
     "saveLhr": false
   },
   "allowedPrivateHosts": [],
-  "outputDir": "output"
+  "outputDir": "output",
+  "crawl": {
+    "enabled": true,
+    "maxPages": 25,
+    "maxDepth": 3,
+    "concurrency": 2,
+    "maxDurationMs": 180000,
+    "excludePatterns": ["/wp-admin", "/cart", "/checkout"],
+    "maxSitemapUrls": 5000,
+    "maxSitemaps": 10
+  }
 }

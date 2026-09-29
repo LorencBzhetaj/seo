@@ -215,7 +215,7 @@ export function runTechnicalSeo(ctx: AuditContext): AuditResult {
     source: 'lighthouse',
     reason: typeof lhSeo === 'number' ? undefined : 'Lighthouse s\'u ekzekutua',
   });
-  m.limitations.push('SEO teknik i vlerësuar vetëm për faqen hyrëse (pa crawl) dhe mbi HTML-në e shërbyer (jo pas JavaScript).');
+  m.limitations.push('SEO teknik (faqja hyrëse): mbi HTML-në e shërbyer, jo pas JavaScript; faqet e tjera janë te seksioni site.');
   if (ctx.access.state !== 'ok') {
     // Pa HTML-në reale s'ka score SEO — as 100 "partial" nga robots.txt vetëm.
     return m.build({ score: null, reason: `HTML-ja reale nuk u mor: ${ctx.access.summary}` });
@@ -233,7 +233,7 @@ function runCanonical(ctx: AuditContext, m: ModuleBuilder, pageUrl: string): voi
   const canon = html.canonicals;
   if (canon.length === 0) {
     m.info('canonical', 'Canonical', [
-      'Mungon <link rel="canonical">. Në MVP-1 (vetëm faqja hyrëse, pa crawl) nuk ka prova URL-sh të dyfishta, prandaj nuk llogaritet si problem.',
+      'Mungon <link rel="canonical">. Pa prova URL-sh të dyfishta nuk llogaritet si problem; dyfishimet vlerësohen te seksioni site (Dyfishime & canonical).',
     ]);
     return;
   }

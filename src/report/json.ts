@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AuditRun } from '../core/run.js';
 import type { AuditResult } from '../core/schemas.js';
+import { buildSiteSection } from './site.js';
 
-export const REPORT_SCHEMA_VERSION = '1';
+/** 2: shtohet seksioni `site` (MVP-2); `health`/`categories`/`issues` mbeten të faqes hyrëse. */
+export const REPORT_SCHEMA_VERSION = '2';
 
 function toolVersion(): string {
   try {
@@ -32,12 +34,13 @@ export function buildReport(run: AuditRun) {
     ...(ctx && ctx.access.state !== 'ok' ? [ctx.access.summary] : []),
     ...(run.health?.limitations ?? []),
     ...run.results.flatMap((r) => r.limitations),
-    'Ky raport mbulon vetëm faqen hyrëse (MVP-1): pa crawl, pa formularë, pa exposure probing, pa AI. Nuk vërteton pajtueshmëri ligjore, siguri apo aksesueshmëri të plotë.',
+    "Health Score, categories dhe issues i përkasin faqes hyrëse (MVP-1); gjetjet për shumë faqe janë te `site` (crawl i kufizuar). Pa submit formularësh, exposure probing apo AI. Raporti s'vërteton pajtueshmëri ligjore, siguri apo aksesueshmëri të plotë.",
   ];
-  const partialModules = run.results.filter((r) => r.partial || r.status === 'skipped').map((r) => r.module);
+  // Statusi i faqes hyrëse; seksioni `site` ka statusin e vet.
+  const partialModules = run.results.filter((r) => r.section === 'homepage' && (r.partial || r.status === 'skipped')).map((r) => r.module);
   return {
     reportSchemaVersion: REPORT_SCHEMA_VERSION,
-    tool: { name: 'website-auditor', version: toolVersion(), phase: 'MVP-1' },
+    tool: { name: 'website-auditor', version: toolVersion(), phase: 'MVP-2' },
     scoringVersion: run.scoringVersion,
     ruleSetVersion: run.ruleSetVersion,
     // lhrFile vendoset nga writeReport vetëm kur LHR-ja ruhet (--save-lhr).
@@ -70,6 +73,8 @@ export function buildReport(run: AuditRun) {
       code: i.code, severity: i.severity, effort: i.effort, priority: i.priority, message: i.message, fix: i.fix,
     })),
     issues: run.issues,
+    /** MVP-2: crawl, sitemap dhe gjetjet për shumë faqe. */
+    site: buildSiteSection(run),
     modules: run.results.map(compactModule),
     limitations: [...new Set(limitations)],
   };

@@ -54,3 +54,22 @@ describe('parseXRobotsTag', () => {
     expect(parseXRobotsTag(undefined)).toEqual([]);
   });
 });
+
+describe('parsePage: teksti kryesor', () => {
+  it('<article> bosh (p.sh. Divi) s\'e fsheh përmbajtjen jashtë tij; iframe regjistrohet', async () => {
+    const { parsePage } = await import('../src/parse/page.js');
+    const body = Array.from({ length: 120 }, (_, i) => `fjala${i}`).join(' ');
+    const html = `<html><body><header>Menu kryesore</header><article></article><div class="et_pb_section"><p>${body}</p></div><iframe src="https://menu.example.com?embed=1"></iframe><footer>Footer</footer></body></html>`;
+    const p = parsePage(html, 'https://e.com/menu/');
+    expect(p.wordCount).toBe(120);
+    expect(p.iframes).toEqual(['https://menu.example.com?embed=1']);
+  });
+
+  it('<main> përdoret kur mban pjesën kryesore të tekstit', async () => {
+    const { parsePage } = await import('../src/parse/page.js');
+    const main = Array.from({ length: 200 }, (_, i) => `m${i}`).join(' ');
+    const p = parsePage(`<html><body><div>jashtë main disa fjalë</div><main><p>${main}</p></main></body></html>`, 'https://e.com/');
+    expect(p.wordCount).toBe(200);
+    expect(p.mainText.startsWith('m0 m1')).toBe(true);
+  });
+});

@@ -1,6 +1,6 @@
-# Website Auditor — MVP-1
+# Website Auditor — MVP-1 + MVP-2
 
-CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** të një siti dhe jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon **vetëm MVP-1** (§11).
+CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1) dhe, me një crawl të kufizuar, **faqet e tjera** të një siti (MVP-2), dhe jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1 dhe MVP-2 (§11).
 
 ## Kërkesat
 
@@ -127,9 +127,49 @@ Në një aplikacion të instaluar, këto duhet të kalojnë te dosja e të dhën
 
 Varësitë vetëm për zhvillim (`typescript`, `tsx`, `vitest`, `cross-env`, `@types/node`) nuk hyjnë në instalues.
 
-## Jashtë MVP-1 (me qëllim)
+## MVP-2: crawl i kufizuar dhe gjetje për shumë faqe
 
-Crawler i plotë, broken links, sitemap, dublikatë përmbajtjeje, submit formularësh, exposure probing (`.env`/`.git`), thirrje AI/vision, HTML/PDF report, dashboard, histori (SQLite), `llms.txt`, desktop Lighthouse.
+Pas faqes hyrëse, auditi lexon sitemap-in dhe bën një crawl të kufizuar. Gjetjet dalin në seksionin **`site`** të raportit (dhe në terminal te "SITE — CRAWL I KUFIZUAR"), **të ndara** nga faqja hyrëse. Health Score mbetet ai i faqes hyrëse (MVP-1, `scoringVersion 1.0`). Për site-in s'ka score të përbashkët, sepse peshat e moduleve s'janë validuar ende.
+
+**Kufijtë parazgjedhje (§7, §13):** 25 faqe, thellësi 3, concurrency 2, ≥ 500 ms mes kërkesave drejt të njëjtit host (s'ulet për site të jashtme), timeout 10 s, 5 MB për përgjigje, 180 s për gjithë crawl-in. Crawl-i ndalet pas 3 përgjigjesh 401/403/429 radhazi.
+
+| Opsion | Kuptimi |
+|---|---|
+| `--no-crawl` | Vetëm faqja hyrëse (sjellja e MVP-1) |
+| `--max-pages <n>` | 1–100 (parazgjedhje 25) |
+| `--max-depth <n>` | 0–10 (parazgjedhje 3) |
+
+**Çfarë s'vizitohet kurrë.** Këto rregulla zbatohen edhe për ridrejtimet, jo vetëm për linket:
+- URL të ndaluara nga robots.txt (përveç me `--ignore-robots`);
+- login/logout/register, `wp-admin`, `wp-login.php`, cart/checkout/my-account;
+- parametra që ndryshojnë gjendje (`add-to-cart`, `action`, `_wpnonce`…) dhe kërkimet (`?s=`);
+- skedarët (PDF, imazhe, CSS/JS);
+- host-e të tjera dhe adresat lokale/private (validimi i MVP-1 zbatohet për çdo URL dhe çdo hop).
+
+Çdo URL e zbuluar por e pakontrolluar listohet te `site.crawl.notChecked`, me arsyen e saj.
+
+| Moduli | Çfarë kontrollon | Kujdesi ndaj false positive |
+|---|---|---|
+| Linke të brendshme | 404/410/5xx me faqet burim dhe tekstin e linkut; linke që kalojnë nga ridrejtime | 401/403/429 dhe gabimet e rrjetit dalin "të paverifikuara", jo "të prishura"; linket e menu/footer bashkohen |
+| Sitemap | Robots.txt ose vendndodhjet standarde, index → fëmijë, XML i vlefshëm, `lastmod` W3C; URL të sitemap-it që kthejnë gabim, ridrejtojnë, kanë noindex/canonical tjetër ose ndalohen nga robots; faqe që mungojnë në sitemap | URL-të e sitemap-it pa link quhen "orphan" vetëm kur crawl-i i linkeve ishte i plotë; mungesa e sitemap-it s'është problem |
+| Dyfishime & canonical | Tituj/përshkrime të njëjta; përmbajtje e ngjashme me shingle 5-fjalëshe, pasi hiqet teksti i përbashkët i template-it | Hash-i i tekstit është vetëm një sinjal: "i provuar" kërkon hash të njëjtë + Jaccard ≥ 0.98 + URL variante ose titull të njëjtë. Canonical vlerësohet vetëm mbi dyfishime të provuara; mungesa e tij përndryshe është vetëm vërejtje |
+| SEO on-page | Faqet e tjera (jo ajo hyrëse): title, description, H1, hierarkia H1–H6, imazhe pa `alt`, `lang`, përmbajtje e shkurtër | Problemet e njëjta bashkohen sipas template-it (klasat e `<body>`); `alt=""` pranohet; "thin content" ka confidence 0.5 dhe tregon iframe-t |
+| Compression/caching | Compression i HTML (≥ 1.4 KB) | `Cache-Control` për HTML raportohet vetëm si informacion |
+| i18n | hreflang: kode, lidhje kthyese, self-reference, target-e, përputhja me `<html lang>` | `not_applicable` për site njëgjuhësh |
+
+Një modul që s'kontrolloi dot faqe (crawl i çaktivizuar/i bllokuar, vetëm faqja hyrëse, pa sitemap) del me score `null` dhe me arsye, jo 100. Kur crawl-i arrin kufijtë, modulet shënohen `partial`, dhe mbulimi shfaqet si "të kontrolluara / të zbuluara".
+
+Për ta provuar mbi një site lokal të kontrolluar:
+
+```bash
+npx tsx tests/fixture-site.ts
+```
+
+Komanda printon URL-në dhe komandën e auditit me `--allow-local`.
+
+## Jashtë MVP-2 (ende)
+
+Kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe), renderimi me JavaScript gjatë crawl-it, Health Score i përbashkët për site-in, sitemap-e `.gz`, caching i burimeve statike përtej faqes hyrëse. Edhe fazat e mëvonshme mbeten jashtë: submit formularësh, exposure probing, AI/vision, HTML/PDF report, dashboard, histori (SQLite), `llms.txt`.
 
 ## Struktura
 
@@ -138,11 +178,13 @@ src/
   cli.ts                     # hyrja e CLI
   core/                      # config, schemas (§4), context (§3), run (AuditRun + runner)
   net/                       # url-guard, safe-fetch, tls-info, guard-proxy
-  parse/                     # html (cheerio), robots (RFC 9309)
+  crawler/                   # crawler (BFS, kufij, robots, politikë ridrejtimesh), url-rules, sitemaps
+  parse/                     # html (cheerio), page (linke, hreflang, tekst), robots (RFC 9309), sitemap
   lighthouse/                # ekzekutimi i Lighthouse mobile
-  modules/                   # availability, seo-technical, security, lighthouse-modules
-  intelligence/priority.ts   # formula e priority (§4)
+  modules/                   # faqja hyrëse: availability, seo-technical, security, lighthouse-modules
+  modules/site/              # MVP-2: links, sitemap, duplicates, onpage, caching, i18n
+  intelligence/              # priority (§4), similarity (shingle/Jaccard)
   scoring/scorer.ts          # category → health → risk modifiers (§1)
-  report/                    # json, terminal
-tests/                       # vitest + fixtures (HTML, LHR reale e shkurtuar)
+  report/                    # json, site (seksioni i crawl-it), terminal
+tests/                       # vitest + fixtures (HTML, LHR reale), fixture-site.ts (site lokal i kontrolluar)
 ```

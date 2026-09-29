@@ -1,7 +1,13 @@
 import crypto from 'node:crypto';
 import type { AuditConfig } from './config.js';
 import { collectContext, type AuditContext, type CollectHooks } from './context.js';
-import type { AuditResult, CategoryKey, HealthResult, Issue } from './schemas.js';
+import type { AuditResult, CategoryKey, HealthResult, Issue, SiteCategoryKey } from './schemas.js';
+import { runLinks } from '../modules/site/links.js';
+import { runSitemap } from '../modules/site/sitemap.js';
+import { runDuplicates } from '../modules/site/duplicates.js';
+import { runOnPage } from '../modules/site/onpage.js';
+import { runCaching } from '../modules/site/caching.js';
+import { runI18n } from '../modules/site/i18n.js';
 import { failedModule } from '../modules/helpers.js';
 import { runAvailability } from '../modules/availability.js';
 import { runTechnicalSeo } from '../modules/seo-technical.js';
@@ -14,7 +20,7 @@ export type RunStatus = 'initializing' | 'crawling' | 'auditing' | 'scoring' | '
 
 export interface AuditModule {
   name: string;
-  category: CategoryKey;
+  category: CategoryKey | SiteCategoryKey;
   run: (ctx: AuditContext) => AuditResult;
 }
 
@@ -28,6 +34,16 @@ export const MVP1_MODULES: AuditModule[] = [
   { name: 'best-practices', category: 'bestPractices', run: runBestPractices },
 ];
 
+/** Modulet e MVP-2: lexojnë crawl-in dhe sitemap-et nga AuditContext. */
+export const SITE_MODULES: AuditModule[] = [
+  { name: 'links', category: 'links', run: runLinks },
+  { name: 'sitemap', category: 'sitemap', run: runSitemap },
+  { name: 'duplicates', category: 'duplicates', run: runDuplicates },
+  { name: 'onpage', category: 'contentSeo', run: runOnPage },
+  { name: 'caching', category: 'caching', run: runCaching },
+  { name: 'i18n', category: 'i18n', run: runI18n },
+];
+
 export interface AuditRun {
   id: string;
   url: string;
@@ -37,7 +53,10 @@ export interface AuditRun {
   config: AuditConfig;
   context?: AuditContext;
   results: AuditResult[];
+  /** Issue-t e faqes hyrëse (MVP-1). */
   issues: Issue[];
+  /** Issue-t nga crawl-i (MVP-2), të ndara nga ato të faqes hyrëse. */
+  siteIssues: Issue[];
   categories: Record<CategoryKey, number | null>;
   health?: HealthResult;
   scoringVersion: string;
@@ -69,6 +88,7 @@ export async function executeAudit(input: string, config: AuditConfig, hooks: Ru
     config,
     results: [],
     issues: [],
+    siteIssues: [],
     categories: {} as AuditRun['categories'],
     scoringVersion: SCORING_VERSION,
     ruleSetVersion: RULESET_VERSION,
@@ -79,19 +99,22 @@ export async function executeAudit(input: string, config: AuditConfig, hooks: Ru
   };
 
   setStatus('initializing');
-  // MVP-1: "crawling" = vetëm mbledhja e të dhënave të faqes hyrëse, pa crawl.
+  // "crawling" = mbledhja e të dhënave: faqja hyrëse (MVP-1), pastaj sitemap + crawl i kufizuar (MVP-2).
   setStatus('crawling');
   const ctx = await collectContext(input, config, hooks);
   run.context = ctx;
   run.url = ctx.url;
 
   setStatus('auditing');
-  run.results = runModules(ctx);
+  run.results = runModules(ctx, [...MVP1_MODULES, ...SITE_MODULES]);
 
   setStatus('scoring');
-  run.issues = sortIssues(run.results.flatMap((r) => r.issues));
-  run.categories = categoryScores(run.results);
-  run.health = computeHealth(run.results, run.issues);
+  const homepage = run.results.filter((r) => r.section === 'homepage');
+  run.issues = sortIssues(homepage.flatMap((r) => r.issues));
+  run.siteIssues = sortIssues(run.results.filter((r) => r.section === 'site').flatMap((r) => r.issues));
+  run.categories = categoryScores(homepage);
+  // Health Score mbetet ai i faqes hyrëse (MVP-1); crawl-i raportohet veç, pa pikë të përbashkëta.
+  run.health = computeHealth(homepage, run.issues);
 
   run.completedAt = new Date().toISOString();
   setStatus('completed');

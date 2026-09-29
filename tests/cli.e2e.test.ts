@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuditReport } from '../src/report/json.js';
 import { fixture } from './helpers.js';
+import { startFixtureSite, type FixtureSite } from './fixture-site.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let server: http.Server;
@@ -216,4 +217,77 @@ describe('CLI mbi server lokal (fixture)', () => {
     },
     200_000,
   );
+});
+
+describe('CLI MVP-2: crawl mbi site lokal të kontrolluar', () => {
+  let site: FixtureSite;
+  beforeAll(async () => {
+    site = await startFixtureSite({ productPages: 5 });
+  });
+  afterAll(async () => {
+    await site.close();
+  });
+  const run = (extra: string[]) => runCli([`${site.base}/`, '--allow-local', site.host, '--no-lighthouse', '--out', outDir, '--json', ...extra], 120_000);
+
+  it('faqja hyrëse dhe site-i ndahen: Health i faqes hyrëse s\'ndryshon me crawl; site ka numrat dhe URL-të pa kontroll', async () => {
+    const withCrawl = await run(['--max-pages', '10']);
+    const noCrawl = await run(['--no-crawl']);
+    expect(withCrawl.code, withCrawl.stderr).toBe(0);
+    expect(noCrawl.code, noCrawl.stderr).toBe(0);
+    const a = JSON.parse(withCrawl.stdout) as AuditReport;
+    const b = JSON.parse(noCrawl.stdout) as AuditReport;
+
+    // MVP-1 i pandryshuar
+    expect(a.categories).toEqual(b.categories);
+    expect(a.issues.map((i) => i.code)).toEqual(b.issues.map((i) => i.code));
+    expect(a.reportSchemaVersion).toBe('2');
+
+    // Seksioni site
+    const s = a.site as Extract<AuditReport['site'], { crawl: unknown }>;
+    expect(s.status).toBe('partial');
+    expect(s.crawl.pagesRequested).toBe(10);
+    expect(s.crawl.limits).toMatchObject({ maxPages: 10, maxDepth: 3, concurrency: 2 });
+    expect(Object.keys(s.crawl.notCheckedByReason)).toEqual(expect.arrayContaining(['robots', 'unsafe', 'resource', 'max-pages']));
+    expect(s.crawl.notChecked.some((n) => n.url.endsWith('/wp-login.php') && n.reason === 'unsafe')).toBe(true);
+    expect(s.categories.links).not.toBeNull();
+    expect(s.categoryCoverage.duplicates).toMatchObject({ partial: true, scope: 'vetëm faqet e kontrolluara — jo rezultat për gjithë sitin' });
+    expect(s.scopeNote).toMatch(/^Crawl i pjesshëm: 10 nga \d+ URL/);
+    expect(s.issues.length).toBeGreaterThan(0);
+    for (const i of s.issues) {
+      expect(i.url, i.code).toBeTruthy();
+      expect(i.evidence.length, i.code).toBeGreaterThan(0);
+    }
+    // Issue-t e site-it s'përzihen me ato të faqes hyrëse
+    expect(a.issues.some((i) => i.code === 'BROKEN_INTERNAL_LINK')).toBe(false);
+
+    expect((b.site as { status: string; reason: string })).toMatchObject({ status: 'skipped', reason: 'Crawl-i u çaktivizua (--no-crawl)' });
+  });
+
+  it('terminali tregon seksionin e crawl-it, kufijtë dhe URL-të pa kontroll', async () => {
+    const { code, stdout } = await runCli([`${site.base}/`, '--allow-local', site.host, '--no-lighthouse', '--out', outDir, '--max-pages', '6']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('SITE — CRAWL I KUFIZUAR (MVP-2)');
+    expect(stdout).toMatch(/6 faqe të kërkuara \(\d+ HTML të analizuara\)/);
+    expect(stdout).toMatch(/kufij: maks 6 faqe · thellësi 3 · concurrency 2/);
+    expect(stdout).toMatch(/pa kontroll: \d+ — .*ndaluar nga robots\.txt/);
+    expect(stdout).toContain('TOP — GJETJE PËR SHUMË FAQE');
+    // Etiketat partial duken qartë: score-t s'paraqiten si rezultat për gjithë sitin
+    expect(stdout).toMatch(/Crawl i pjesshëm: 6 nga \d+ URL të zbuluara u kontrolluan/);
+    expect(stdout).toMatch(/Dyfishime & canonical\s+\d+ partial — vetëm \d+\/\d+ URL, jo për gjithë sitin/);
+  });
+
+  it('--max-pages jashtë kufirit → exit 2', async () => {
+    const { code, stderr } = await runCli([`${site.base}/`, '--allow-local', site.host, '--max-pages', '500']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('--max-pages duhet të jetë numër i plotë 1–100');
+  });
+
+  it('faqja hyrëse e bllokuar (403) → crawl-i s\'niset; site skipped me arsye; asnjë score site', async () => {
+    const { code, stdout } = await runCli([`http://${host}/blocked/`, '--allow-local', host, '--no-lighthouse', '--out', outDir, '--json']);
+    expect(code).toBe(0);
+    const report = JSON.parse(stdout) as AuditReport;
+    expect(report.site.status).toBe('skipped');
+    expect((report.site as { reason: string }).reason).toMatch(/Crawl-i s'u nis: faqja hyrëse s'u mor realisht/);
+    expect(Object.values(report.site.categories).every((v) => v === null)).toBe(true);
+  });
 });
