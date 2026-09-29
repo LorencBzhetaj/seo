@@ -25,5 +25,13 @@
   },
   "business": {
     "enabled": true
+  },
+  "source": {
+    "maxFiles": 5000,
+    "maxFileBytes": 2097152,
+    "maxTotalBytes": 314572800,
+    "maxDepth": 25,
+    "repoMaxBytes": 157286400,
+    "repoTimeoutMs": 120000
   }
 }

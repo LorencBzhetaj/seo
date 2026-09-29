@@ -18,6 +18,11 @@ export interface FetchOptions {
    * URL e pasigurt, host tjetër), ose null. Kur ndalet, kthehet përgjigjja 3xx me `redirectNotFollowed`.
    */
   redirectPolicy?: (next: URL) => string | null;
+  /**
+   * Instrumentim (teste/diagnostikë): thirret kur një kërkesë lëshohet realisht (pas throttle-it)
+   * dhe kur mbaron. `at` = Date.now(), e njëjta orë që përdor HostThrottle.
+   */
+  onDispatch?: (e: { phase: 'start' | 'end'; url: string; host: string; at: number }) => void;
 }
 
 export interface RedirectHop {
@@ -232,12 +237,15 @@ export async function safeFetch(input: string | URL, opts: FetchOptions): Promis
     }
     seen.add(current.href);
     await opts.throttle?.wait(current.host);
+    opts.onDispatch?.({ phase: 'start', url: current.href, host: current.host, at: Date.now() });
 
     let res: SingleResponse;
     try {
       res = await requestOnce(current, opts, true);
     } catch (err) {
       throw classifyError(err, current.href, redirects);
+    } finally {
+      opts.onDispatch?.({ phase: 'end', url: current.href, host: current.host, at: Date.now() });
     }
 
     const location = res.rawHeaders.location;

@@ -1,0 +1,4 @@
+@import "baza.css";
+body { font-family: sans-serif; }
+.hero { background: url("../img/sfond.jpg") no-repeat; }
+.logo { background-image: url(../img/foto%20%C3%AB.png); }

@@ -42,7 +42,7 @@ Opsione:
 | `--no-business` | Pa modulet e MVP-3 (conversion, privacy, detektimi i llojit/CMS-it) |
 | `--json` | Shtyp JSON-in në stdout në vend të përmbledhjes |
 
-Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL e pavlefshme/e bllokuar, `3` bllokuar nga robots.txt.
+Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL/dosje e pavlefshme ose e bllokuar, `3` bllokuar nga robots.txt, `4` repo e paarritshme (private/s'ekziston), e paplotë ose tepër e madhe.
 
 Raporti ruhet si `output/{host}-{YYYYMMDD-HHmmss}.json` (dosja `output/` është në `.gitignore`).
 
@@ -196,6 +196,39 @@ Seksioni **`business`** i raportit (në terminal "BIZNES & PRIVATËSI") është 
 
 **Kufizime:** HTML statik, pa JavaScript. Log-u i rrjetit vjen vetëm nga Lighthouse në faqen hyrëse; pa Lighthouse, kontrolli i tracker-ave në ngarkim del `skipped`. Banner-i s'klikohet. Pa crawl (`--no-crawl`), modulet dalin `partial` (vetëm faqja hyrëse).
 
+## Auditi i skedarëve: `--folder` dhe `--repo`
+
+Auditon **skedarët** e një projekti, jo një faqe të publikuar. Raporti është i veçantë (`reportType: "source-audit"`, `reportSchemaVersion: "source-1"`, skedari `output/source-{folder|repo}-{emri}-{koha}.json`), dhe **s'ka Health Score, Lighthouse apo header-a HTTP**, sepse kodi s'ekzekutohet.
+
+```bash
+npm run audit -- --folder "C:\Projekte\sit statik"
+```
+
+```bash
+npm run audit -- --repo https://github.com/octocat/Spoon-Knife
+```
+
+**Çdo gjetje ka:** path relativ (me `/`), rresht kur njihet me siguri (nga parser-i HTML ose pozicioni në CSS/robots/sitemap), provë (atributi, madhësia, rregulli) dhe sugjerim. Kur rreshti s'dihet (p.sh. mungon `<h1>`), s'shpiket.
+
+| Kontrolli | Çfarë bën |
+|---|---|
+| SEO në HTML | title (mungon/gjatësia), meta description, H1 (mungon/disa), `lang`, viewport, `<img>` pa alt |
+| Linke dhe asete lokale | `href`/`src`/`srcset`/`poster` → skedari ekziston? `%20` dhe UTF-8 dekodohen; dosje → `index.html`; "x" → `x.html` shënohet si fallback. Raporton: skedar që mungon, **shkronja të mëdha/vogla që ndryshojnë** (punon në Windows, 404 në Linux), shteg jashtë dosjes |
+| Asete në CSS | `url()` dhe `@import`, relativ ndaj skedarit CSS |
+| Dublikime | tituj/përshkrime të njëjta; përmbajtje identike ose shumë e ngjashme (shingle, pa tekstin e përbashkët) |
+| Imazhet | madhësia nga stat (> 300 KB, > 1 MB); imazhe që s'përmenden në HTML/CSS/JS (vetëm vërejtje) |
+| Konfigurime | robots.txt (`Disallow: /` për të gjithë), sitemap.xml (XML, URL pa skedar), favicon, 404.html, JSON i pavlefshëm, header-a në `_headers`/`netlify.toml`/`vercel.json`/`.htaccess` (vetëm si konfigurim, s'verifikohen live) |
+| Skedarë të ndjeshëm | `.env*`, çelësa, dump SQL, `wp-config.php` me fjalëkalim; modele sekretesh (PEM, AWS, Stripe live, GitHub, Slack, Google API). **Vlerat maskohen gjithmonë** |
+
+**Mbulimi i shpjeguar** (`coverage.accounting`): `filesSeen = readAsText + statOnly + unread`. `statOnly` janë asetet binare (imazhe, fonte…) që kontrollohen vetëm me stat (ekzistenca, madhësia), pa lexim teksti. `unread` janë skedarët e tekstit që s'u lexuan, me arsyen (p.sh. `too-large`, `binary`, `lfs-pointer`). `notListed` janë hyrjet e anashkaluara para listimit (dosje të injoruara, symlink-e, kufij), që s'numërohen te skedarët.
+
+**Lloji i projektit** (`project`): statik, Next.js, Nuxt, Astro, Gatsby, SvelteKit, Vite SPA, Hugo, Jekyll, Eleventy, WordPress, PHP ose `unknown`, me confidence dhe sinjale. Për projektet që e gjenerojnë HTML-në me build/server, kontrollet e HTML-së dalin **`skipped` me arsye** dhe me udhëzim ("ekzekuto build vetë dhe audito `out/`/`_site/`… me `--folder`, ose URL-në publike"). Asetet publike (`public/`, `static/`), robots dhe sekretet kontrollohen gjithsesi. Pa HTML fare → `skipped`, jo "pass".
+
+**Siguria dhe kufijtë:**
+- **`--folder`:** symlink-et dhe junction-et **s'ndiqen**; ato që dalin jashtë dosjes raportohen. `node_modules`, `.git`, `.next` etj. anashkalohen. Kufij: 5000 skedarë, 2 MB për skedar teksti, 300 MB gjithsej, thellësi 25 (`config.json` → `source`). Çdo gjë e anashkaluar listohet te `coverage.skipped` me arsyen, dhe raporti del `partial`.
+- **`--repo`:** vetëm `https://` publik (pa kredenciale në URL, pa SSH, host jo privat). Klonim i cekët (`--depth 1`, pa tags/submodule/LFS) në një dosje të përkohshme që fshihet pas auditit. **Asgjë s'ekzekutohet:** pa `npm install`, build, skripte, hooks (`core.hooksPath` bosh), symlink-e (`core.symlinks=false`) apo filtra LFS. Kufij: 150 MB dhe 120 s; tejkalimi e ndërpret klonimin dhe kopja e paplotë s'auditohet. Raporti ruan URL-në, commit-in, branch-in dhe datën.
+- **Repo private:** credential helper-at çaktivizohen dhe s'ka prompt. Një repo private ose që s'ekziston jep exit `4` me mesazhin që qasja kërkon konfigurim të veçantë, që s'mbështetet ende.
+
 ## Jashtë MVP-3 (ende)
 
 Renderimi me JavaScript gjatë crawl-it dhe matja "above the fold" në viewport; klikimi i banner-it të pëlqimit (para/pas pranimit); testimi i validimit të formave në browser (dry-run pa submit); kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe); Health Score i përbashkët për site-in; sitemap-e `.gz`. Edhe fazat e mëvonshme mbeten jashtë: submit real formularësh, exposure probing, AI/vision (MVP-4), HTML/PDF report, dashboard, histori (SQLite), `llms.txt`, instalues Windows.
@@ -213,6 +246,7 @@ src/
   modules/                   # faqja hyrëse: availability, seo-technical, security, lighthouse-modules
   modules/site/              # MVP-2: links, sitemap, duplicates, onpage, caching, i18n
   modules/business/          # MVP-3: conversion, privacy (sinjale, pa score)
+  source/                    # audit i skedarëve: walk, project, refs, checks, repo (klon i sigurt), run, report
   detection/                 # MVP-3: page-type, tech-stack (confidence + signals), index (faqet + cache)
   intelligence/              # priority (§4), similarity (shingle/Jaccard)
   scoring/scorer.ts          # category → health → risk modifiers (§1)

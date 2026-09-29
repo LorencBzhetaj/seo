@@ -321,3 +321,31 @@ describe('CLI MVP-2: crawl mbi site lokal të kontrolluar', () => {
     expect(Object.values(report.site.categories).every((v) => v === null)).toBe(true);
   });
 });
+
+describe('CLI: auditi i skedarëve (--folder / --repo)', () => {
+  const FIX = path.join(ROOT, 'tests', 'fixtures', 'source', 'sit statik ë ç');
+
+  it('--folder me hapësira dhe ë/ç: raport source-audit i veçantë, pa Health Score/Lighthouse', async () => {
+    const { code, stdout, stderr } = await runCli(['--folder', FIX, '--out', outDir, '--json']);
+    expect(code, stderr).toBe(0);
+    const r = JSON.parse(stdout) as { reportType: string; source: { kind: string; folder: string }; findings: { file: string; line?: number }[] };
+    expect(r.reportType).toBe('source-audit');
+    expect(r.source).toMatchObject({ kind: 'folder', folder: FIX });
+    expect(r).not.toHaveProperty('health');
+    expect(r.findings.some((f) => f.file === 'index.html' && f.line === 15)).toBe(true);
+    expect(fs.readdirSync(outDir).some((n) => /^source-folder-sit_statik_e_c-\d{8}-\d{6}\.json$/.test(n))).toBe(true);
+    const text = await runCli(['--folder', FIX, '--out', outDir]);
+    expect(text.stdout).toMatch(/SOURCE AUDIT — .*sit statik ë ç/);
+    expect(text.stdout).toMatch(/pa Health Score · pa Lighthouse · asgjë s'u ekzekutua/);
+    expect(text.stdout).toMatch(/ku: {4}index\.html:15/);
+  }, 60_000);
+
+  it('hyrje të pavlefshme → exit 2: dosje që s\'ekziston, repo jo-https, --folder + --repo, URL + --folder', async () => {
+    expect((await runCli(['--folder', path.join(outDir, 'nuk-ekziston ë'), '--out', outDir])).code).toBe(2);
+    const http = await runCli(['--repo', 'http://github.com/a/b.git', '--out', outDir]);
+    expect(http.code).toBe(2);
+    expect(http.stderr).toMatch(/Vetëm https:\/\//);
+    expect((await runCli(['--folder', FIX, '--repo', 'https://github.com/a/b.git'])).code).toBe(2);
+    expect((await runCli(['https://example.com', '--folder', FIX])).code).toBe(2);
+  }, 60_000);
+});

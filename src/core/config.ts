@@ -46,6 +46,15 @@ export interface AuditConfig {
   business: {
     enabled: boolean;
   };
+  /** Auditi i skedarëve (--folder/--repo): kufijtë e leximit dhe të klonimit. */
+  source: {
+    maxFiles: number;
+    maxFileBytes: number;
+    maxTotalBytes: number;
+    maxDepth: number;
+    repoMaxBytes: number;
+    repoTimeoutMs: number;
+  };
 }
 
 /** Kufiri i sipërm i lejuar për --max-pages (përdorim personal, i kujdesshëm me serverin). */
@@ -81,6 +90,14 @@ export const DEFAULT_CONFIG: AuditConfig = {
   business: {
     enabled: true,
   },
+  source: {
+    maxFiles: 5000,
+    maxFileBytes: 2 * 1024 * 1024,
+    maxTotalBytes: 300 * 1024 * 1024,
+    maxDepth: 25,
+    repoMaxBytes: 150 * 1024 * 1024,
+    repoTimeoutMs: 120_000,
+  },
 };
 
 /** Shkrin config.json (opsional) mbi parazgjedhjet. Sekretet nuk mbahen këtu. */
@@ -98,6 +115,7 @@ export function loadConfig(configPath?: string, overrides: Partial<AuditConfig> 
     ...overrides,
     crawl: { ...DEFAULT_CONFIG.crawl, ...(fileConfig.crawl ?? {}), ...(overrides.crawl ?? {}) },
     business: { ...DEFAULT_CONFIG.business, ...(fileConfig.business ?? {}), ...(overrides.business ?? {}) },
+    source: { ...DEFAULT_CONFIG.source, ...(fileConfig.source ?? {}), ...(overrides.source ?? {}) },
     lighthouse: {
       ...DEFAULT_CONFIG.lighthouse,
       ...(fileConfig.lighthouse ?? {}),

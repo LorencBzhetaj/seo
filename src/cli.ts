@@ -8,8 +8,13 @@ import { runLighthouse } from './lighthouse/run-lighthouse.js';
 import { BlockedUrlError } from './net/url-guard.js';
 import { buildReport, writeReport } from './report/json.js';
 import { renderTerminal } from './report/terminal.js';
+import { RepoError } from './source/repo.js';
+import { buildSourceReport, renderSourceTerminal, writeSourceReport } from './source/report.js';
+import { executeSourceAudit } from './source/run.js';
 
 const HELP = `Përdorimi: website-audit <url> [opsione]
+          website-audit --folder <dosje> [--out <dir>] [--json]
+          website-audit --repo <https://…/repo.git> [--out <dir>] [--json]
 
 Faqja hyrëse (MVP-1): availability, SEO teknik, security headers/HTTPS/TLS, Lighthouse mobile.
 Site (MVP-2): crawl i kufizuar (robots.txt, pa login/cart/checkout), linke të prishura, sitemap,
@@ -30,10 +35,14 @@ Opsione:
                           ({raporti}.lhr.json). Mund të përmbajë URL/të dhëna të faqes.
   --ignore-robots         Anashkalo robots.txt për tool-in (vetëm për site që i kontrollon vetë)
   --allow-local <hosts>   VETËM për fixtures/teste: lejo hoste lokale, p.sh. 127.0.0.1:4321
+  --folder <dosje>        Audit i skedarëve të një dosjeje lokale (HTML/CSS/JS statik; pa ekzekutim)
+  --repo <url>            Audit i një repo publike Git (https): klon i cekët i përkohshëm, pa
+                          npm install/build/skripte; repo private s'mbështeten
   --json                  Shtyp raportin JSON në stdout në vend të përmbledhjes
   -h, --help              Ndihmë
 
-Kodet e daljes: 0 ok (edhe partial), 1 gabim i brendshëm, 2 URL e pavlefshme/e bllokuar, 3 bllokuar nga robots.txt`;
+Kodet e daljes: 0 ok (edhe partial), 1 gabim i brendshëm, 2 URL/dosje e pavlefshme ose e bllokuar,
+3 bllokuar nga robots.txt, 4 repo e paarritshme (private/s'ekziston), e paplotë ose tepër e madhe`;
 
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -51,14 +60,18 @@ async function main(): Promise<number> {
       'max-depth': { type: 'string' },
       'allow-local': { type: 'string' },
       json: { type: 'boolean', default: false },
+      folder: { type: 'string' },
+      repo: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
 
-  if (values.help || positionals.length !== 1) {
+  const sourceMode = values.folder !== undefined || values.repo !== undefined;
+  if (values.help || (sourceMode ? positionals.length !== 0 || (values.folder !== undefined && values.repo !== undefined) : positionals.length !== 1)) {
     console.log(HELP);
     return values.help ? 0 : 2;
   }
+  if (sourceMode) return runSource(values.folder, values.repo, values.out, values.config, values.json ?? false);
 
   const base = loadConfig(values.config);
   const intArg = (name: string, v: string | undefined, min: number, max: number): number | undefined => {
@@ -130,6 +143,40 @@ async function main(): Promise<number> {
     if (err instanceof RobotsBlockedError) {
       log(`Auditi u ndal: ${err.message}\nNëse siti është yti, përsërite me --ignore-robots.`);
       return 3;
+    }
+    log(`Gabim: ${(err as Error).stack ?? err}`);
+    return 1;
+  }
+}
+
+/** Auditi i skedarëve: rrjedhë e veçantë nga auditi i URL-së (pa Health Score, pa Lighthouse). */
+async function runSource(folder: string | undefined, repo: string | undefined, out: string | undefined, configPath: string | undefined, json: boolean): Promise<number> {
+  const log = (msg: string) => process.stderr.write(`${msg}\n`);
+  const config = loadConfig(configPath);
+  const s = config.source;
+  try {
+    const result = await executeSourceAudit(folder !== undefined ? { kind: 'folder', target: folder } : { kind: 'repo', target: repo! }, {
+      limits: { maxFiles: s.maxFiles, maxFileBytes: s.maxFileBytes, maxTotalBytes: s.maxTotalBytes, maxDepth: s.maxDepth },
+      repoLimits: { maxBytes: s.repoMaxBytes, timeoutMs: s.repoTimeoutMs },
+      onStep: (step) => log(`  – ${step}`),
+    });
+    const report = buildSourceReport(result);
+    const file = writeSourceReport(report, path.resolve(out ?? config.outputDir));
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else console.log(renderSourceTerminal(report, file));
+    return 0;
+  } catch (err) {
+    if (err instanceof RepoError) {
+      log(`Repo: ${err.message}`);
+      return err.code === 'REPO_URL_INVALID' ? 2 : 4;
+    }
+    if (err instanceof BlockedUrlError) {
+      log(`URL e refuzuar: ${err.message}`);
+      return 2;
+    }
+    if (/^Dosja s'u gjet/.test((err as Error).message)) {
+      log((err as Error).message);
+      return 2;
     }
     log(`Gabim: ${(err as Error).stack ?? err}`);
     return 1;

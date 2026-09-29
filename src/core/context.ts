@@ -80,6 +80,8 @@ export { isHtml } from './access.js';
 export interface CollectHooks {
   onStep?: (step: string) => void;
   runLighthouse?: (url: string, config: AuditConfig) => Promise<LighthouseData>;
+  /** Instrumentim i kërkesave HTTP (teste): shih FetchOptions.onDispatch. */
+  onDispatch?: FetchOptions['onDispatch'];
 }
 
 /**
@@ -92,7 +94,7 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
   // Për site të jashtme vonesa s'bie nën 500 ms për host (§13); më e ulët vetëm për fixtures lokale.
   const delay = isExplicitlyAllowed(url, config.allowedPrivateHosts) ? config.requestDelay : Math.max(MIN_REQUEST_DELAY_MS, config.requestDelay);
   const throttle = new HostThrottle(delay);
-  const opts = fetchOptions(config, throttle);
+  const opts = { ...fetchOptions(config, throttle), onDispatch: hooks.onDispatch };
   const step = hooks.onStep ?? (() => {});
 
   // 1. robots.txt — edhe si sinjal SEO, edhe si "leje" për tool-in (§7).

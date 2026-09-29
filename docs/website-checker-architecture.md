@@ -586,6 +586,21 @@ Conversion Audit (CTA, contact, forms në SAFE mode) + Privacy/GDPR + Page Type 
 - Për "Recommendations Engine" ekziston vetëm një hap i parë: fix-i i privatësisë përmend zgjidhjen për WordPress kur CMS-i ka confidence ≥ 0.7.
 - Jashtë: renderimi me JS dhe viewport, klikimi i banner-it, dry-run i formave në browser.
 
+**Faza pas MVP-3 — Auditi i skedarëve (`--folder`, `--repo`)**
+*Statusi: implementuar si CLI, në pritje të shqyrtimit.*
+- Kodi: `src/source/`, i ndarë nga auditi i URL-së, me raport të veçantë (`reportType: source-audit`).
+- Kontrollet: HTML/CSS/JS statik (linke/asete lokale me path + rresht, SEO në HTML, dublikime, imazhe, konfigurime, skedarë të ndjeshëm), lloji i projektit dhe matrica e kontrolleve të mbështetura.
+- Për kodin që kërkon build/server/renderim: `skipped` me arsye. **Pa Health Score dhe pa Lighthouse**, sepse kodi s'ekzekutohet.
+- `--repo`: klon i cekët i përkohshëm i një repo publike https, pa skripte, hooks, LFS apo kredenciale, me kufi madhësie dhe kohe; repo private kërkojnë konfigurim të veçantë.
+
+**Faza e radhës (e planifikuar, ende pa implementim) — Cilësia e përmbajtjes dhe pamja gjenerike ("AI slop")**
+Sinjale, **jo provë autorësie**:
+- tekst gjenerik ose i përsëritur (fraza shabllon, pretendime pa prova, përmbajtje "e mbushur");
+- mungesë detajesh specifike (emra, vende, çmime, orare);
+- dizajn/template i pandryshuar (stock images, seksione identike me temën bazë, placeholder-a të mbetur).
+
+Çdo sinjal me confidence të ulët dhe verifikim manual. Pa verdikt "e shkruar nga AI". Gjykimi vizual (Claude vision) mbetet te MVP-4. Pas saj: dashboard-i lokal.
+
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).
 

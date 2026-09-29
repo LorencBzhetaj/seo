@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, type AuditConfig } from '../src/core/config.js';
-import { collectContext, type AuditContext } from '../src/core/context.js';
+import { collectContext, type AuditContext, type CollectHooks } from '../src/core/context.js';
 import type { CrawlResult } from '../src/crawler/crawler.js';
 import { isInternal, isUrlVariant, normalizeUrl, unsafeOrExcluded } from '../src/crawler/url-rules.js';
 import { runLinks } from '../src/modules/site/links.js';
@@ -24,9 +24,9 @@ function config(host: string, over: Partial<AuditConfig['crawl']> = {}, top: Par
   };
 }
 
-async function crawlFixture(opts: FixtureOptions = {}, over: Partial<AuditConfig['crawl']> = {}, top: Partial<AuditConfig> = {}) {
+async function crawlFixture(opts: FixtureOptions = {}, over: Partial<AuditConfig['crawl']> = {}, top: Partial<AuditConfig> = {}, hooks: CollectHooks = {}) {
   site = await startFixtureSite(opts);
-  const ctx = await collectContext(`${site.base}/`, config(site.host, over, top));
+  const ctx = await collectContext(`${site.base}/`, config(site.host, over, top), hooks);
   if (ctx.crawl.status !== 'ok') throw new Error(`crawl: ${JSON.stringify(ctx.crawl)}`);
   return { ctx, crawl: ctx.crawl.value, site };
 }
@@ -117,13 +117,28 @@ describe('Crawler mbi site lokal', () => {
   });
 
   it('concurrency ≤ 2 dhe vonesa për host respektohet', async () => {
-    const { site: s } = await crawlFixture({ latencyMs: 60 }, {}, { requestDelay: 100 });
+    // Matja bëhet te klienti, në momentin kur tool-i e lëshon kërkesën (pas throttle-it), me të njëjtën
+    // orë si HostThrottle. Koha e mbërritjes te serveri lokal përfshin luhatjen e rrjetit/CPU-së nën
+    // ngarkesën e testeve paralele (p.sh. 67 ms për vonesë 100 ms), ndaj s'është matje e qëndrueshme.
+    const events: { phase: 'start' | 'end'; host: string; at: number }[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const { site: s } = await crawlFixture({ latencyMs: 60 }, {}, { requestDelay: 100 }, {
+      onDispatch: (e) => {
+        events.push(e);
+        inFlight += e.phase === 'start' ? 1 : -1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+      },
+    });
+    const starts = events.filter((e) => e.phase === 'start').map((e) => e.at);
+    expect(starts.length).toBeGreaterThan(10);
+    // Vonesa: çdo lëshim ≥ 100 ms pas të mëparshmit (pa tolerancë — i njëjti burim kohe si throttle-i)
+    for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!, `kërkesa ${i}`).toBeGreaterThanOrEqual(100);
+    // Concurrency: klienti s'ka kurrë > 2 kërkesa njëkohësisht; serveri s'mund të shohë më shumë se klienti
+    expect(maxInFlight).toBeLessThanOrEqual(2);
     expect(s.maxActive()).toBeLessThanOrEqual(2);
-    // Koha matet te serveri (përfshin luhatjen e lidhjes TCP): tolerancë e vogël për çdo hap, mesatarja ≥ vonesës.
-    const starts = s.requests.map((r) => r.at).sort((a, b) => a - b);
-    const gaps = starts.slice(1).map((t, i) => t - starts[i]!);
-    for (const g of gaps) expect(g).toBeGreaterThanOrEqual(70);
-    expect(gaps.reduce((a, b) => a + b, 0) / gaps.length).toBeGreaterThanOrEqual(97);
+    // Çdo kërkesë që arriti te serveri u lëshua nga klienti (asnjë kërkesë pa kaluar nga throttle-i)
+    expect(s.requests.length).toBeLessThanOrEqual(starts.length);
   });
 
   it('--ignore-robots (respectRobots=false) e lejon URL-në e ndaluar; unsafe mbetet i ndaluar', async () => {
