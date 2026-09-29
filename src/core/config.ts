@@ -42,6 +42,10 @@ export interface AuditConfig {
     maxSitemapUrls: number;
     maxSitemaps: number;
   };
+  /** MVP-3: conversion + privacy + detektimi i llojit të faqes/CMS-it (vetëm lexim i të dhënave të mbledhura). */
+  business: {
+    enabled: boolean;
+  };
 }
 
 /** Kufiri i sipërm i lejuar për --max-pages (përdorim personal, i kujdesshëm me serverin). */
@@ -74,6 +78,9 @@ export const DEFAULT_CONFIG: AuditConfig = {
     maxSitemapUrls: 5000,
     maxSitemaps: 10,
   },
+  business: {
+    enabled: true,
+  },
 };
 
 /** Shkrin config.json (opsional) mbi parazgjedhjet. Sekretet nuk mbahen këtu. */
@@ -90,6 +97,7 @@ export function loadConfig(configPath?: string, overrides: Partial<AuditConfig> 
     ...fileConfig,
     ...overrides,
     crawl: { ...DEFAULT_CONFIG.crawl, ...(fileConfig.crawl ?? {}), ...(overrides.crawl ?? {}) },
+    business: { ...DEFAULT_CONFIG.business, ...(fileConfig.business ?? {}), ...(overrides.business ?? {}) },
     lighthouse: {
       ...DEFAULT_CONFIG.lighthouse,
       ...(fileConfig.lighthouse ?? {}),

@@ -1,9 +1,9 @@
 import type { AuditResult, CategoryKey, HealthModifier, HealthResult, Issue } from '../core/schemas.js';
-import { CATEGORY_LABELS, isSiteCategory } from '../core/schemas.js';
+import { CATEGORY_LABELS } from '../core/schemas.js';
 
 export const SCORING_VERSION = '1.0';
-/** mvp2: shtohen modulet e site-it; formula e Health Score-it të faqes hyrëse s'ndryshon (scoringVersion 1.0). */
-export const RULESET_VERSION = '2026.09-mvp2';
+/** mvp3: shtohen conversion/privacy/detektimi (jashtë Health); formula e Health Score-it s'ndryshon (scoringVersion 1.0). */
+export const RULESET_VERSION = '2026.09-mvp3';
 
 /** Peshat e kategorive (heuristikë e versionuar; do të rishikohen pas validimit të MVP-1). */
 export const CATEGORY_WEIGHTS: Record<CategoryKey, number> = {
@@ -25,7 +25,7 @@ export const CONFIRMED_CONFIDENCE = 0.9;
 export function categoryScores(results: AuditResult[]): Record<CategoryKey, number | null> {
   const out = Object.fromEntries(Object.keys(CATEGORY_WEIGHTS).map((k) => [k, null])) as Record<CategoryKey, number | null>;
   for (const r of results) {
-    if (r.section === 'site' || isSiteCategory(r.category)) continue; // crawl-i s'hyn në Health të faqes hyrëse
+    if (r.section !== 'homepage' || !(r.category in CATEGORY_WEIGHTS)) continue; // crawl-i (MVP-2) dhe biznesi (MVP-3) s'hyjnë në Health
     // Një modul për kategori në MVP-1; nëse do të ketë më shumë, mesatare e thjeshtë e atyre me score.
     const prev = out[r.category as CategoryKey];
     if (r.score === null) continue;

@@ -2,10 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AuditRun } from '../core/run.js';
 import type { AuditResult } from '../core/schemas.js';
+import { buildBusinessSection } from './business.js';
 import { buildSiteSection } from './site.js';
 
-/** 2: shtohet seksioni `site` (MVP-2); `health`/`categories`/`issues` mbeten të faqes hyrëse. */
-export const REPORT_SCHEMA_VERSION = '2';
+/**
+ * 2: shtohet seksioni `site` (MVP-2). 3: shtohet seksioni `business` (MVP-3: detektim, conversion, privacy).
+ * `health`/`categories`/`issues` mbeten të faqes hyrëse.
+ */
+export const REPORT_SCHEMA_VERSION = '3';
 
 function toolVersion(): string {
   try {
@@ -40,7 +44,7 @@ export function buildReport(run: AuditRun) {
   const partialModules = run.results.filter((r) => r.section === 'homepage' && (r.partial || r.status === 'skipped')).map((r) => r.module);
   return {
     reportSchemaVersion: REPORT_SCHEMA_VERSION,
-    tool: { name: 'website-auditor', version: toolVersion(), phase: 'MVP-2' },
+    tool: { name: 'website-auditor', version: toolVersion(), phase: 'MVP-3' },
     scoringVersion: run.scoringVersion,
     ruleSetVersion: run.ruleSetVersion,
     // lhrFile vendoset nga writeReport vetëm kur LHR-ja ruhet (--save-lhr).
@@ -77,6 +81,8 @@ export function buildReport(run: AuditRun) {
     issues: run.issues,
     /** MVP-2: crawl, sitemap dhe gjetjet për shumë faqe. */
     site: buildSiteSection(run),
+    /** MVP-3: lloji i sitit/faqeve, CMS, conversion dhe sinjale privatësie (jashtë Health Score-it). */
+    business: buildBusinessSection(run),
     modules: run.results.map(compactModule),
     limitations: [...new Set(limitations)],
   };

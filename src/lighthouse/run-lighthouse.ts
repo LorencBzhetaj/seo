@@ -51,8 +51,20 @@ export interface LighthouseData {
   blockedRequests: { url: string; reason: string }[];
   /** LHR i plotë, vetëm kur lighthouse.saveLhr është aktiv. S'futet në raportin JSON. */
   rawLhr?: unknown;
+  /**
+   * Klasifikimi i palëve të treta nga Lighthouse (third-party-web): emri, kategoria (analytics, ad,
+   * tag-manager, cdn…) dhe origin-et. Përdoret nga moduli privacy (MVP-3). Mund të mungojë në LHR të vjetra.
+   */
+  entities?: LhEntity[];
   /** Përpjekjet e dështuara para kësaj (bosh kur e para pati sukses) — raportohen, s'fshihen. */
   failedAttempts: LighthouseAttempt[];
+}
+
+export interface LhEntity {
+  name: string;
+  category?: string;
+  isFirstParty?: boolean;
+  origins: string[];
 }
 
 export interface LighthouseAttempt {
@@ -171,6 +183,7 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
       categories: lhr.categories as unknown as Record<string, LhCategory>,
       audits: lhr.audits as unknown as Record<string, LhAudit>,
       blockedRequests: [...proxy.blocked],
+      entities: ((lhr as { entities?: LhEntity[] }).entities ?? []).map((e) => ({ name: e.name, category: e.category, isFirstParty: e.isFirstParty, origins: e.origins ?? [] })),
       rawLhr: config.lighthouse.saveLhr ? lhr : undefined,
     };
   } finally {

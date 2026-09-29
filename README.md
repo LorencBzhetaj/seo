@@ -1,6 +1,6 @@
-# Website Auditor — MVP-1 + MVP-2
+# Website Auditor — MVP-1 + MVP-2 + MVP-3
 
-CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1) dhe, me një crawl të kufizuar, **faqet e tjera** të një siti (MVP-2), dhe jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1 dhe MVP-2 (§11).
+CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1), me një crawl të kufizuar **faqet e tjera** të një siti (MVP-2), dhe **sinjalet e biznesit e të privatësisë** me zbulim të llojit të sitit e CMS-it (MVP-3). Jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1, MVP-2 dhe MVP-3 (§11). Mbetet CLI për përdorim personal: pa SaaS, llogari përdoruesish apo instalues.
 
 ## Kërkesat
 
@@ -39,6 +39,7 @@ Opsione:
 | `--save-lhr` | Ruaj edhe LHR-në e plotë të Lighthouse pranë raportit (joaktiv si parazgjedhje; shih më poshtë) |
 | `--ignore-robots` | Anashkalo robots.txt për tool-in — **vetëm për site që i kontrollon vetë** |
 | `--allow-local <host:port>` | **Vetëm për fixtures/teste**: lejo një host lokal |
+| `--no-business` | Pa modulet e MVP-3 (conversion, privacy, detektimi i llojit/CMS-it) |
 | `--json` | Shtyp JSON-in në stdout në vend të përmbledhjes |
 
 Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL e pavlefshme/e bllokuar, `3` bllokuar nga robots.txt.
@@ -171,9 +172,33 @@ npx tsx tests/fixture-site.ts
 
 Komanda printon URL-në dhe komandën e auditit me `--allow-local`.
 
-## Jashtë MVP-2 (ende)
+## MVP-3: conversion, sinjale privatësie, lloji i sitit dhe CMS-i
 
-Kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe), renderimi me JavaScript gjatë crawl-it, Health Score i përbashkët për site-in, sitemap-e `.gz`, caching i burimeve statike përtej faqes hyrëse. Edhe fazat e mëvonshme mbeten jashtë: submit formularësh, exposure probing, AI/vision, HTML/PDF report, dashboard, histori (SQLite), `llms.txt`.
+Seksioni **`business`** i raportit (në terminal "BIZNES & PRIVATËSI") është **jashtë Health Score-it**. Pikëzimi i MVP-1/MVP-2 s'ndryshon (`scoringVersion 1.0`; `ruleSetVersion 2026.09-mvp3`; `reportSchemaVersion 3`), dhe testet e verifikojnë këtë. MVP-3 **s'bën asnjë kërkesë shtesë**: lexon HTML-në e faqeve që u morën tashmë (faqja hyrëse + crawl) dhe log-un e rrjetit të Lighthouse. Me `--no-business` modulet çaktivizohen.
+
+| Pjesa | Çfarë jep | Kujdesi ndaj false positive |
+|---|---|---|
+| **Lloji i sitit** (`business.detection.site`) | `lodging` / `restaurant` / `ecommerce` / `blog` / `local-business` / **`unknown`**, me `confidence`, `signals[]` (burimi + pesha), alternativa, `capabilities` (booking, menu, contact, blog, shop, newsletter, multilingual), gjuhët | `confidence = 1 − Π(1 − w)` e sinjaleve të pavarura (heuristikë, jo probabilitet i kalibruar). Nën 0.5 → `unknown`. Kur lloji i dytë është brenda 0.05, raportohet `mixedWith` (siti i përzier, p.sh. guesthouse + restorant). Formularët që dalin në ≥ 60% të faqeve (modal global) s'e karakterizojnë një faqe |
+| **Lloji i faqeve** (`business.detection.pages`) | home, contact, about, menu, booking, rooms, product, shop, blog-post, blog-index, legal, faq, gallery, **unknown** | `og:type article` ka peshë të ulët (plugin-et SEO e vendosin edhe në faqe të zakonshme) |
+| **CMS/Tech stack** (`business.detection.techStack`) | CMS + version (nga `generator`), page builder, e-commerce, framework JS, CDN, plugin-e të dukshme | Kërkon vetëm në atribute, `<script>` dhe komente, jo në tekstin e dukshëm: një artikull që përmend `/wp-content/` s'e bën sitin WordPress. Pa prova → `unknown` |
+| **Conversion** (score) | CTA në faqen hyrëse (lloji, rajoni, a duket si buton); telefon/email/WhatsApp i klikueshëm, numra si tekst pa `tel:`; adresë/hartë/orar **vetëm kur lloji i sitit e kërkon** (issue-t trashëgojnë confidence-in e detektimit); formularët; dëshmi besimi (rating, review, testimonial, platforma, profile sociale) | Mungesat kanë confidence ≤ 0.6 dhe kërkojnë verifikim. Kur HTML-ja duket e renderuar me JS (pak tekst + app root), kontrolli i CTA-së del `skipped`, jo "mungon". Fushat honeypot dhe format e renditjes/filtrimit (GET me select) përjashtohen. Pozicioni "above the fold" **s'matet** |
+| **Privacy** (**pa score** me qëllim, status `info`) | Linke te politikat; CMP të njohura (Cookiebot, OneTrust, CookieYes, Complianz…) ose markup banner-i; Google Consent Mode; tracker-a në HTML; **kërkesat te palë të treta gjurmuese gjatë ngarkimit pa ndërveprim** (Lighthouse: profil i ri, asnjë klik); emrat e cookies të palëve të treta; forma me të dhëna personale | Vetëm sinjale të vëzhgueshme me prova. **S'jep përfundim "në përputhje / jo në përputhje me GDPR"**. Query-t e kërkesave (ID klienti) s'ruhen. Vlerat e cookies s'lexohen |
+
+**Çfarë do të thotë Conversion 100:** vetëm që sinjalet e kontrolluara në HTML statik janë në rregull. **Nuk** është provë se rrjedha e konvertimit funksionon: rezervimi/blerja, dërgimi i formularëve, pozicioni real i CTA-ve në viewport dhe përmbajtja e iframe-ve s'testohen. Kjo shkruhet pranë score-it në terminal dhe në JSON (`business.categoryCoverage.conversion.scope`, `business.scoreScope.conversion.notTested`).
+
+**Formularët dedublikohen sipas një identiteti të qëndrueshëm:** qëllimi, metoda, `id`, klasat pa numra, action-i (`self` kur dërgon te vetë faqja, `js` pa action) dhe fushat. I njëjti komponent raportohet "1 formular i përsëritur në N faqe". Inventari është te `business.forms` (`pageCount`, `repeated`, `sampleUrls`).
+
+**Privacy:** issue-t tregojnë vetëm faktin e vëzhguar (p.sh. kërkesa `g/collect` gjatë ngarkimit), me confidence ≤ 0.6 dhe verifikim manual. Mungesa e CMP/Consent Mode në HTML statik jepet vetëm si provë shtesë, me shënimin që s'provon mungesën e mekanizmit. Për newsletter jepet vetëm sinjali teknik (checkbox në HTML), dhe mënyra e abonimit/pëlqimit kërkon verifikim manual.
+
+**SAFE mode për formularët (§8):** lexohet vetëm struktura (fushat, etiketat, `type`, `required`, buton, captcha, honeypot, checkbox pëlqimi, action). **Asnjë formë s'plotësohet apo dërgohet**; login/cart/checkout s'vizitohen. Testi e2e e verifikon që serveri s'merr asnjë POST.
+
+**Iframe ndër-domain** (p.sh. menu ose rezervim nga një host tjetër) shënohen qartë: "përmbajtja e iframe-it s'u kontrollua". CTA, forma dhe kontakti brenda tyre s'numërohen.
+
+**Kufizime:** HTML statik, pa JavaScript. Log-u i rrjetit vjen vetëm nga Lighthouse në faqen hyrëse; pa Lighthouse, kontrolli i tracker-ave në ngarkim del `skipped`. Banner-i s'klikohet. Pa crawl (`--no-crawl`), modulet dalin `partial` (vetëm faqja hyrëse).
+
+## Jashtë MVP-3 (ende)
+
+Renderimi me JavaScript gjatë crawl-it dhe matja "above the fold" në viewport; klikimi i banner-it të pëlqimit (para/pas pranimit); testimi i validimit të formave në browser (dry-run pa submit); kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe); Health Score i përbashkët për site-in; sitemap-e `.gz`. Edhe fazat e mëvonshme mbeten jashtë: submit real formularësh, exposure probing, AI/vision (MVP-4), HTML/PDF report, dashboard, histori (SQLite), `llms.txt`, instalues Windows.
 
 ## Struktura
 
@@ -183,12 +208,14 @@ src/
   core/                      # config, schemas (§4), context (§3), run (AuditRun + runner)
   net/                       # url-guard, safe-fetch, tls-info, guard-proxy
   crawler/                   # crawler (BFS, kufij, robots, politikë ridrejtimesh), url-rules, sitemaps
-  parse/                     # html (cheerio), page (linke, hreflang, tekst), robots (RFC 9309), sitemap
+  parse/                     # html (cheerio), page (linke, hreflang, tekst), business (CTA/kontakt/forma/privatësi), robots (RFC 9309), sitemap
   lighthouse/                # ekzekutimi i Lighthouse mobile
   modules/                   # faqja hyrëse: availability, seo-technical, security, lighthouse-modules
   modules/site/              # MVP-2: links, sitemap, duplicates, onpage, caching, i18n
+  modules/business/          # MVP-3: conversion, privacy (sinjale, pa score)
+  detection/                 # MVP-3: page-type, tech-stack (confidence + signals), index (faqet + cache)
   intelligence/              # priority (§4), similarity (shingle/Jaccard)
   scoring/scorer.ts          # category → health → risk modifiers (§1)
-  report/                    # json, site (seksioni i crawl-it), terminal
+  report/                    # json, site (seksioni i crawl-it), business (MVP-3), terminal
 tests/                       # vitest + fixtures (HTML, LHR reale), fixture-site.ts (site lokal i kontrolluar)
 ```

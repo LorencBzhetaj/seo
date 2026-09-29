@@ -16,7 +16,7 @@ function makeRun(lighthouse: Probe<LighthouseData>): AuditRun {
   const issues = results.flatMap((r) => r.issues);
   return {
     id: 't', url: ctx.url, startedAt: '2026-09-29T01:00:00.000Z', completedAt: '2026-09-29T01:01:00.000Z', status: 'completed',
-    config: ctx.config, context: ctx, results, issues, siteIssues: [], categories: categoryScores(results), health: computeHealth(results, issues),
+    config: ctx.config, context: ctx, results, issues, siteIssues: [], businessIssues: [], categories: categoryScores(results), health: computeHealth(results, issues),
     scoringVersion: '1.0', ruleSetVersion: 'test',
   };
 }

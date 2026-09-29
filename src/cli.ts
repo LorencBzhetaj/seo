@@ -13,13 +13,16 @@ const HELP = `Përdorimi: website-audit <url> [opsione]
 
 Faqja hyrëse (MVP-1): availability, SEO teknik, security headers/HTTPS/TLS, Lighthouse mobile.
 Site (MVP-2): crawl i kufizuar (robots.txt, pa login/cart/checkout), linke të prishura, sitemap,
-dyfishime/canonical, SEO on-page, compression, i18n. Raporti JSON ruhet lokalisht.
+dyfishime/canonical, SEO on-page, compression, i18n.
+Biznes (MVP-3): CTA, kontakt, formularë (SAFE: pa submit), sinjale privatësie (jo verdikt ligjor),
+lloji i sitit/faqeve dhe CMS-i me confidence. Raporti JSON ruhet lokalisht.
 
 Opsione:
   --out <dir>             Dosja e raporteve (parazgjedhje: output/)
   --config <file>         Config JSON (parazgjedhje: ./config.json nëse ekziston)
   --no-lighthouse         Mos ekzekuto Lighthouse (performance/accessibility → skipped)
   --no-crawl              Vetëm faqja hyrëse (MVP-1), pa crawl/sitemap
+  --no-business           Pa modulet e MVP-3 (conversion, privacy, detektim)
   --max-pages <n>         Faqe maksimale për crawl (parazgjedhje 25, maks. 100)
   --max-depth <n>         Thellësia maksimale e linkeve (parazgjedhje 3)
   --chrome-path <path>    Rruga e Chrome/Chromium për Lighthouse
@@ -43,6 +46,7 @@ async function main(): Promise<number> {
       'ignore-robots': { type: 'boolean', default: false },
       'save-lhr': { type: 'boolean', default: false },
       'no-crawl': { type: 'boolean', default: false },
+      'no-business': { type: 'boolean', default: false },
       'max-pages': { type: 'string' },
       'max-depth': { type: 'string' },
       'allow-local': { type: 'string' },
@@ -85,6 +89,7 @@ async function main(): Promise<number> {
       maxPages: Math.min(maxPages ?? base.crawl.maxPages, MAX_PAGES_HARD_LIMIT),
       maxDepth: maxDepth ?? base.crawl.maxDepth,
     },
+    business: { ...base.business, enabled: values['no-business'] ? false : base.business.enabled },
     lighthouse: {
       ...base.lighthouse,
       enabled: values['no-lighthouse'] ? false : base.lighthouse.enabled,

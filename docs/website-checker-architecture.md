@@ -117,10 +117,18 @@ Peshat e kategorive (Security vs SEO vs Conversion) dhe pragjet e "critical" do 
 | Forms Check | Fields, validim, butona, JS errors — **SAFE/dry-run by default, s'bën submit real** (shih §8) | Puppeteer | Falas |
 | Trust Signals | Testimonials, reviews, pricing, social proof | DOM/keyword detection | Falas |
 
+> **Implementimi (MVP-3, `src/modules/business/conversion.ts`):** pa Puppeteer. Sinjalet vijnë nga HTML-ja statike e faqeve të mbledhura tashmë (`src/parse/business.ts`), pa kërkesa shtesë. "Above the fold" **s'matet**; raportohet vetëm rajoni (header/përmbajtje/footer) dhe radha në DOM. Forms Check lexon vetëm strukturën (fusha, etiketa, `type`, `required`, buton, captcha, honeypot, action) dhe s'bën submit as dry-run në browser. Mungesat kanë confidence ≤ 0.6 + verifikim manual. Kur HTML-ja duket e renderuar me JS, kontrolli i CTA-së del `skipped`. Kontrolli adresë/hartë/orar aktivizohet nga Page Type Detection dhe issue-t e tij trashëgojnë confidence-in e detektimit. Iframe-t ndër-domain shënohen "përmbajtja s'u kontrollua". Moduli ka score, jashtë Health Score-it.
+
 ### F. Privacy/GDPR
 | Modul | Ç'mat | Tool | Kosto |
 |---|---|---|---|
 | Privacy signals | Banner, politika dhe request-e të palëve të treta para/pas ndërveprimit të kontrolluar; sinjale për shqyrtim manual, jo verdikt ligjor GDPR | DOM + network log | Falas lokalisht |
+
+> **Implementimi (MVP-3, `src/modules/business/privacy.ts`):** moduli **s'ka score** (status `info`) dhe s'formulon kurrë "në përputhje / shkel GDPR". Burimet:
+> - HTML statik: linke politikash, CMP të njohura ose markup banner-i, `gtag('consent','default')`, tracker-a, forma me të dhëna personale;
+> - log-u i rrjetit i Lighthouse për faqen hyrëse: një ngarkim në profil të ri Chrome, **pa asnjë klik** (pra "para ndërveprimit"), me klasifikimin `entities` të third-party-web dhe emrat e cookies nga auditi `third-party-cookies`. Gjendja "pas ndërveprimit" (pranim/refuzim i banner-it) **s'testohet ende**.
+>
+> Issue-t (p.sh. `TRACKING_ON_LOAD_WITHOUT_CONSENT_SIGNAL`) janë sinjale me confidence ≤ 0.6 dhe `needsManualReview`. URL-të në prova ruhen pa query (ID klienti), dhe vlerat e cookies s'lexohen.
 
 ### G. AI / LLM Discoverability (llms.txt = sinjal i vogël, jo kryesor)
 | Modul | Ç'mat | Tool | Kosto |
@@ -254,6 +262,11 @@ interface TechStackResult {
   signals: DetectionSignal[];
 }
 ```
+
+**Implementimi (MVP-3):**
+- `PageTypeResult` ka edhe `alternatives[]` (p.sh. guesthouse me restorant) dhe `languages[]`.
+- `type`/`cms` janë `"unknown"` kur confidence < 0.5. `TechStackResult` shton `cmsVersion`, `candidates[]`, `builder`, `ecommerce`, `cdn` dhe `extras`.
+- `DetectionSignal = { signal, source: html|header|url|schema|network|crawl, url?, weight }`. Confidence = `1 − Π(1 − weight)`: heuristikë e versionuar, jo probabilitet i kalibruar.
 
 Issue-t që rrjedhin nga këto detektime (§4) e trashëgojnë `confidence`-in nga burimi, në vend që ta rillogarisin — kështu s'ka rrezik mospërputhjeje mes detection-it dhe issue-s që e përdor.
 
@@ -513,8 +526,10 @@ website-auditor/
 │   │   ├── schemas.ts       # AuditResult, Issue, Evidence (§4)
 │   │   └── errors.js
 │   ├── detection/
-│   │   ├── page-type.js     # → PageTypeResult (§3)
-│   │   └── tech-stack.js    # → TechStackResult (§3)
+│   │   ├── page-type.ts     # → PageTypeResult (§3) + lloji i çdo faqeje
+│   │   ├── tech-stack.ts    # → TechStackResult (§3)
+│   │   ├── signals.ts       # combine() = 1 − Π(1 − w), prag "unknown" 0.5
+│   │   └── index.ts         # faqet e analizueshme + ctx.detection
 │   ├── crawler/
 │   │   ├── crawler.js       # me crawl budget (§7)
 │   │   ├── robots.js
@@ -525,8 +540,7 @@ website-auditor/
 │   │   ├── seo/             # technical-seo, content-seo, broken-links, duplicate-content, sitemap-health
 │   │   ├── security/        # headers, tls, exposure
 │   │   ├── infra/           # availability, caching, url-consistency, error-pages, favicon, scripts
-│   │   ├── conversion/       # cta, contact, forms, trust-signals
-│   │   ├── privacy/          # gdpr
+│   │   ├── business/         # conversion.ts (cta, contact, local-info, forms, trust), privacy.ts (sinjale, pa score)
 │   │   ├── ai-readiness/     # structured-info, crawlability, semantic, llms-txt
 │   │   ├── visual-ux/        # screenshot capture + Claude vision judge
 │   │   └── i18n/
@@ -567,6 +581,10 @@ Crawler (me crawl budget, §7) → Broken Links + Duplicate Content + Sitemap He
 
 **MVP-3 — Business Intelligence**
 Conversion Audit (CTA, contact, forms në SAFE mode) + Privacy/GDPR + Page Type Detection e plotë (me confidence/signals/capabilities) + CMS Detection — këto feed-ojnë Recommendations Engine me fix specifik.
+*Statusi: implementuar si CLI, në pritje të shqyrtimit.* Seksioni `business` i raportit është jashtë Health Score-it (`scoringVersion 1.0` i pandryshuar, `ruleSetVersion 2026.09-mvp3`, `reportSchemaVersion 3`).
+- Detektimi: `src/detection/` (`page-type.ts`, `tech-stack.ts`, `signals.ts`). Llogaritet një herë nga AuditContext (`ctx.detection`), pa rrjet.
+- Për "Recommendations Engine" ekziston vetëm një hap i parë: fix-i i privatësisë përmend zgjidhjen për WordPress kur CMS-i ka confidence ≥ 0.7.
+- Jashtë: renderimi me JS dhe viewport, klikimi i banner-it, dry-run i formave në browser.
 
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).

@@ -9,7 +9,7 @@ export interface FixtureSite {
   base: string;
   host: string;
   /** Kërkesat e marra: path + koha (ms) + concurrency në atë çast. */
-  requests: { path: string; at: number; active: number }[];
+  requests: { path: string; at: number; active: number; method: string }[];
   maxActive: () => number;
   close: () => Promise<void>;
 }
@@ -74,7 +74,11 @@ export async function startFixtureSite(opts: FixtureOptions = {}): Promise<Fixtu
       case '/about':
         return html(page('Rreth nesh — Fixture', `<h1>Rreth nesh</h1><p>${lorem('rreth', 150)}</p>`, '<meta name="description" content="Rreth nesh">'));
       case '/contact':
-        return html(page('Kontakt — Fixture', `<h1>Kontakt</h1><p>${lorem('kontakt', 60)}</p><a href="/missing">Link i prishur</a>`));
+        return html(page('Kontakt — Fixture', `<h1>Kontakt</h1><p>${lorem('kontakt', 60)}</p><a href="/missing">Link i prishur</a>` +
+          // MVP-3: formë kontakti — s'duhet dërguar kurrë (SAFE mode)
+          '<form method="post" action="/contact-submit"><label>Email <input type="email" name="email" required></label><label>Mesazhi <textarea name="message"></textarea></label><button>Dërgo</button></form>'));
+      case '/contact-submit':
+        return html(page('NDALUAR', "<h1>Forma s'duhej dërguar</h1>"));
       case '/privacy':
         return html(page('Privatësia — Fixture', `<h1>Privatësia</h1><p>${lorem('privat', 90)}</p>`));
       case '/blog':
@@ -123,7 +127,7 @@ export async function startFixtureSite(opts: FixtureOptions = {}): Promise<Fixtu
     const path = new URL(req.url ?? '/', 'http://x').pathname;
     active++;
     maxActive = Math.max(maxActive, active);
-    requests.push({ path: req.url ?? path, at: Date.now(), active });
+    requests.push({ path: req.url ?? path, at: Date.now(), active, method: req.method ?? 'GET' });
     const respond = () => {
       const r = routes(path) ?? { status: 404, body: '<html><body>404</body></html>', headers: { 'content-type': 'text/html' } };
       res.writeHead(r.status, r.headers ?? {}).end(r.body);

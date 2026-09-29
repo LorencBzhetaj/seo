@@ -7,6 +7,7 @@ import { assertUrlAllowed, BlockedUrlError, isExplicitlyAllowed, normalizeInputU
 import { isAllowed, parseRobots, type ParsedRobots } from '../parse/robots.js';
 import { parseHtml, type ParsedHtml } from '../parse/html.js';
 import type { LighthouseData } from '../lighthouse/run-lighthouse.js';
+import type { DetectionData } from '../detection/index.js';
 import { classifyAccess, isHtml, isSuccess, type AccessInfo } from './access.js';
 
 /** Rezultat i një mbledhjeje të dhënash: ok, gabim (me kod), ose e anashkaluar me arsye. */
@@ -38,6 +39,8 @@ export interface AuditContext {
   sitemaps: Probe<SitemapData>;
   crawl: Probe<CrawlResult>;
   lighthouse: Probe<LighthouseData>;
+  /** MVP-3: lloji i sitit/faqeve dhe CMS-i — llogariten nga të dhënat e mësipërme, pa rrjet. */
+  detection?: DetectionData;
 }
 
 export class RobotsBlockedError extends Error {

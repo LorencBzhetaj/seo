@@ -1,5 +1,5 @@
 import type { AuditReport } from './json.js';
-import { CATEGORY_LABELS, SITE_CATEGORY_LABELS, type CategoryKey, type Issue, type Severity, type SiteCategoryKey } from '../core/schemas.js';
+import { BUSINESS_CATEGORY_LABELS, CATEGORY_LABELS, SITE_CATEGORY_LABELS, type BusinessCategoryKey, type CategoryKey, type Issue, type Severity, type SiteCategoryKey } from '../core/schemas.js';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = (code: number) => (s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -81,6 +81,7 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
   out.push(` ${bold('TOP IMPROVEMENTS — FAQJA HYRËSE')}`);
   out.push(...issueLines(report.issues));
   out.push(...siteLines(report, line));
+  out.push(...businessLines(report, line));
   out.push(`├${line}┤`);
   out.push(` ${bold('KUFIZIME')}`);
   for (const l of report.limitations.slice(0, 6)) out.push(dim(`  • ${truncate(l, 110)}`));
@@ -101,6 +102,51 @@ function issueLines(issues: Issue[]): string[] {
     out.push(`    ${dim('fix:')}   ${truncate(i.fix, 90)}`);
   });
   if (issues.length > 5) out.push(dim(`  … +${issues.length - 5} issue të tjera në raportin JSON`));
+  return out;
+}
+
+/** Seksioni i MVP-3: detektimi, conversion dhe sinjalet e privatësisë, jashtë Health Score-it. */
+function businessLines(report: AuditReport, line: string): string[] {
+  const b = report.business;
+  const out = [`├${line}┤`, ` ${bold('BIZNES & PRIVATËSI (MVP-3)')}  ${dim("s'hyn në Health Score")}`];
+  if (b.status === 'skipped' || !('detection' in b)) {
+    out.push(yellow(`  skipped: ${'reason' in b ? b.reason : ''}`));
+    return out;
+  }
+  const d = b.detection;
+  if ('site' in d && d.site && d.techStack && d.pageTypeCounts) {
+    const pct = (n: number) => n.toFixed(2);
+    const alt = d.site.alternatives.length ? dim(` · edhe: ${d.site.alternatives.map((a) => `${a.type} ${pct(a.confidence)}`).join(', ')}`) : '';
+    out.push(` Lloji i sitit: ${bold(d.site.type)} ${dim(`(confidence ${pct(d.site.confidence)})`)}${alt}`);
+    if (d.site.mixedWith) out.push(yellow(`   ${d.site.type} dhe ${d.site.mixedWith} kanë prova pothuajse të barabarta — siti duket i përzier`));
+    if (d.site.signals.length) out.push(dim(`   sinjale: ${truncate(d.site.signals.map((s) => s.signal).join('; '), 100)}`));
+    const t = d.techStack;
+    const extra = [t.builder && `${t.builder.name}`, t.ecommerce && t.ecommerce.name, t.framework && t.framework.name, t.cdn && `CDN ${t.cdn.name}`].filter(Boolean).join(' · ');
+    out.push(` CMS: ${bold(t.cms)}${t.cmsVersion ? ` ${t.cmsVersion}` : ''} ${dim(`(confidence ${pct(t.confidence)})`)}${extra ? dim(` · ${extra}`) : ''}`);
+    out.push(dim(` Aftësi: ${d.site.capabilities.join(', ') || '—'} · gjuhë: ${d.site.languages.join(', ') || '—'} · faqe: ${Object.entries(d.pageTypeCounts).map(([k, n]) => `${n} ${k}`).join(', ')}`));
+  }
+  out.push(dim(` ${b.scopeNote}`));
+  for (const [k, v] of Object.entries(b.categories) as [BusinessCategoryKey, number | null][]) {
+    const mod = report.modules.find((m) => m.category === k);
+    const cov = b.categoryCoverage[k];
+    const note =
+      mod?.status === 'info'
+        ? yellow(` sinjale, pa score — jo verdikt ligjor${cov?.partial ? ' (partial)' : ''}`)
+        : v === null
+          ? dim(` skipped: ${truncate(mod?.reason ?? '', 40)}`)
+          : cov?.partial
+            ? yellow(` partial — ${cov.checked}/${cov.discovered} faqe`)
+            : '';
+    out.push(` ${BUSINESS_CATEGORY_LABELS[k].padEnd(28)} ${scoreColor(v)}${note}`);
+    if (k === 'conversion' && v !== null) {
+      out.push(yellow('   ↳ vetëm sinjale në HTML statik — jo provë se rrjedha e konvertimit funksionon'));
+      out.push(dim(`     s'u testuan: ${b.scoreScope.conversion.notTested.slice(0, 4).join('; ')}`));
+    }
+  }
+  const repeatedForms = b.forms.filter((f) => f.repeated);
+  if (b.forms.length) out.push(dim(` Formularë: ${b.forms.length} komponentë${repeatedForms.length ? ` (${repeatedForms.map((f) => `1 ${f.purpose}${f.id ? ` #${f.id}` : ''} i përsëritur në ${f.pageCount} faqe`).slice(0, 2).join('; ')})` : ''}`));
+  out.push(` ${bold('TOP — BIZNES & PRIVATËSI')}`);
+  out.push(...issueLines(b.issues));
   return out;
 }
 

@@ -68,13 +68,14 @@ export interface Metric {
   reason?: string;
 }
 
-export type ModuleStatus = 'pass' | 'warning' | 'fail' | 'not_applicable' | 'skipped';
+/** info = modul vetëm me sinjale, pa score me qëllim (p.sh. privacy: s'jep verdikt ligjor). */
+export type ModuleStatus = 'pass' | 'warning' | 'fail' | 'not_applicable' | 'skipped' | 'info';
 
 export interface AuditResult {
   module: string;
-  category: CategoryKey | SiteCategoryKey;
-  /** homepage = MVP-1 (faqja hyrëse); site = gjetje nga crawl-i (MVP-2). */
-  section: 'homepage' | 'site';
+  category: AnyCategoryKey;
+  /** homepage = MVP-1 (faqja hyrëse); site = gjetje nga crawl-i (MVP-2); business = conversion/privacy (MVP-3). */
+  section: 'homepage' | 'site' | 'business';
   score: number | null;
   status: ModuleStatus;
   partial: boolean;
@@ -109,6 +110,24 @@ export const SITE_CATEGORY_LABELS: Record<SiteCategoryKey, string> = {
 
 export function isSiteCategory(c: string): c is SiteCategoryKey {
   return c in SITE_CATEGORY_LABELS;
+}
+
+/** Kategoritë e MVP-3: sinjale biznesi dhe privatësie, jashtë Health Score-it. */
+export type BusinessCategoryKey = 'conversion' | 'privacy';
+
+export const BUSINESS_CATEGORY_LABELS: Record<BusinessCategoryKey, string> = {
+  conversion: 'Conversion (CTA/kontakt/forma)',
+  privacy: 'Privacy (sinjale, jo verdikt)',
+};
+
+export function isBusinessCategory(c: string): c is BusinessCategoryKey {
+  return c in BUSINESS_CATEGORY_LABELS;
+}
+
+export type AnyCategoryKey = CategoryKey | SiteCategoryKey | BusinessCategoryKey;
+
+export function sectionOf(c: AnyCategoryKey): AuditResult['section'] {
+  return isSiteCategory(c) ? 'site' : isBusinessCategory(c) ? 'business' : 'homepage';
 }
 
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {

@@ -240,7 +240,7 @@ describe('CLI MVP-2: crawl mbi site lokal të kontrolluar', () => {
     // MVP-1 i pandryshuar
     expect(a.categories).toEqual(b.categories);
     expect(a.issues.map((i) => i.code)).toEqual(b.issues.map((i) => i.code));
-    expect(a.reportSchemaVersion).toBe('2');
+    expect(a.reportSchemaVersion).toBe('3');
 
     // Seksioni site
     const s = a.site as Extract<AuditReport['site'], { crawl: unknown }>;
@@ -261,6 +261,36 @@ describe('CLI MVP-2: crawl mbi site lokal të kontrolluar', () => {
     expect(a.issues.some((i) => i.code === 'BROKEN_INTERNAL_LINK')).toBe(false);
 
     expect((b.site as { status: string; reason: string })).toMatchObject({ status: 'skipped', reason: 'Crawl-i u çaktivizua (--no-crawl)' });
+  });
+
+  it('MVP-3: seksioni business me detektim, conversion dhe privacy pa score; asnjë formë e dërguar; Health i pandryshuar', async () => {
+    const before = site.requests.length;
+    const withBiz = await run(['--max-pages', '10']);
+    const noBiz = await run(['--max-pages', '10', '--no-business']);
+    expect(withBiz.code, withBiz.stderr).toBe(0);
+    const a = JSON.parse(withBiz.stdout) as AuditReport;
+    const b = JSON.parse(noBiz.stdout) as AuditReport;
+    // Pikëzimi i MVP-1/MVP-2 s'varet nga MVP-3
+    expect(a.health).toEqual(b.health);
+    expect(a.categories).toEqual(b.categories);
+    expect(a.site.categories).toEqual(b.site.categories);
+    expect(b.business).toMatchObject({ status: 'skipped', reason: 'Modulet e biznesit u çaktivizuan (--no-business)' });
+
+    const biz = a.business as Extract<AuditReport['business'], { detection: unknown }>;
+    const d = biz.detection as Extract<typeof biz.detection, { site: unknown }>;
+    expect(d.basis).toBe('crawl');
+    expect(d.site.type).toBe('unknown'); // fixture pa sinjale lloji — s'hamendësohet
+    expect(d.techStack.cms).toBe('unknown');
+    expect(d.pages.find((p) => p.url.endsWith('/contact'))).toMatchObject({ type: 'contact' });
+    expect(a.modules.find((m) => m.module === 'privacy')).toMatchObject({ score: null, status: 'info' });
+    expect(biz.privacyDisclaimer).toMatch(/nuk është vlerësim ligjor/);
+    const forms = a.modules.find((m) => m.module === 'conversion')!.checks.find((c) => c.id === 'forms')!;
+    expect(forms.observations!.join(' ')).toMatch(/1 faqe: kontakt — 2 fusha .*action 127\.0\.0\.1:\d+\/contact-submit/);
+
+    // SAFE: asnjë POST, asnjë kërkesë te action-i i formës, login apo shporta
+    const during = site.requests.slice(before);
+    expect(during.filter((r) => r.method !== 'GET' && r.method !== 'HEAD')).toEqual([]);
+    expect(during.some((r) => /contact-submit|wp-login|\/cart\//.test(r.path))).toBe(false);
   });
 
   it('terminali tregon seksionin e crawl-it, kufijtë dhe URL-të pa kontroll', async () => {

@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { extractBusinessSignals, type BusinessSignals } from './business.js';
 import { parseHtml, parseXRobotsTag, snippet, type ParsedHtml } from './html.js';
 
 export interface PageLink {
@@ -24,6 +25,8 @@ export interface PageData extends ParsedHtml {
    * email-decode.min.js i kthen në mailto: në browser. S'janë faqe — s'futen te `links`.
    */
   cfEmailLinks: { count: number; decoderScript: boolean; sample?: string };
+  /** Sinjale biznesi/privatësie nga HTML-ja statike (MVP-3). */
+  business: BusinessSignals;
   /** Identifikues i template-it (klasat e body pa ID, ose skeleti i DOM-it), për grupimin e issue-ve. */
   templateKey: string;
 }
@@ -129,6 +132,9 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
   const templateKey = templateKeyOf($);
   const cfDecoder = $('script[src*="/cdn-cgi/scripts/"][src*="email-decode"]').length > 0;
 
+  // MVP-3: para heqjes së script/iframe/footer (tracker-at, CMP-të dhe linket e politikave janë aty).
+  const business = extractBusinessSignals($, pageUrl, baseUrl, fnv1a);
+
   // iframe-t regjistrohen para heqjes: përmbajtja mund të jetë brenda tyre (p.sh. menu e jashtme).
   const iframes = $('iframe[src]').map((_, el) => $(el).attr('src') ?? '').get().filter(Boolean).slice(0, 5);
 
@@ -160,6 +166,7 @@ export function parsePage(html: string, pageUrl: string, xRobotsTag?: string): P
     wordCount,
     iframes,
     noindex: metaNoindex || headerNoindex,
+    business,
     cfEmailLinks: { count: cfEmailCount, decoderScript: cfDecoder, sample: cfEmailSample },
     templateKey,
   };

@@ -22,5 +22,8 @@
     "excludePatterns": ["/wp-admin", "/cart", "/checkout"],
     "maxSitemapUrls": 5000,
     "maxSitemaps": 10
+  },
+  "business": {
+    "enabled": true
   }
 }
