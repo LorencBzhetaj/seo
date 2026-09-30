@@ -604,7 +604,23 @@ Sinjale, **jo provë autorësie**:
 - Pamja: desktop + mobile në ≤ 4 faqe përfaqësuese (max 8), me screenshot-e lokale si evidence: overflow mobile, placeholder/stock, hero i përsëritur, karta ikonash uniforme, gradient i përsëritur, layout identik mes llojeve të faqeve. Pamja që s'renderohet → `skipped` me arsye.
 - `--folder`/`--repo`: vetëm teksti (skedar + rresht). Pamja `skipped`, sepse s'ekzekutohet kodi i projektit.
 
-Çdo sinjal ka confidence të ulët dhe kërkon verifikim manual. Pa verdikt "e shkruar nga AI". Gjykimi vizual me model (Claude vision) mbetet te MVP-4. Faza e radhës: dashboard-i lokal.
+Çdo sinjal ka confidence të ulët dhe kërkon verifikim manual. Pa verdikt "e shkruar nga AI". Gjykimi vizual me model (Claude vision) mbetet te MVP-4.
+
+**Faza pas cilësisë — Dashboard-i lokal (prototip)**
+*Statusi: prototip funksional mbi raportet ekzistuese, në pritje të shqyrtimit. Instaluesi s'ka nisur.*
+- **Kodi:** `src/dashboard/`, i ndarë nga motori.
+  - `store`: lexim i sigurt i `output/`;
+  - `model`: issue të unifikuara nga seksionet;
+  - `compare`: krahasim me arsye "s'krahasohet";
+  - `views`: HTML i renderuar në server;
+  - `server`: `node:http`.
+  - Nisja: `npm run dashboard`.
+- **Pa JavaScript në faqe** dhe pa varësi të reja. Filtrat punojnë me formularë GET, provat me `<details>`.
+- **Siguria:** vetëm `127.0.0.1` + kontroll `Host`, vetëm lexim, CSP pa skripte, escape i çdo vlere nga raportet, skedarë vetëm brenda `output/` me emra të validuar.
+- **Kufizime:**
+  - s'ka histori në SQLite: lista lexohet nga skedarët në çdo kërkesë;
+  - krahasimi është për dy raporte, jo trend. Pragjet (±5 Lighthouse, ≥ 90% faqe të përbashkëta) janë provizore. Ndryshimet e Lighthouse nga një matje shënohen "e matur, kërkon konfirmim". Me `ruleSetVersion` tjetër, gjetjet e reja ose të zhdukura dalin "s'krahasohen";
+  - s'nis audite nga ndërfaqja.
 
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).

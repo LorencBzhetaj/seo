@@ -270,6 +270,52 @@ Një gradient, një grup kartash ose një shabllon i zakonshëm, **më vete s'ë
 
 **Te `--folder`/`--repo`:** kontrollohet vetëm teksti (`content-quality`, me skedar + rresht). Pamja del `skipped`, sepse renderimi do të ekzekutonte kodin/JS-në e projektit.
 
+## Dashboard-i lokal (prototip)
+
+Ndërfaqe në browser mbi raportet ekzistuese të `output/`. Punon vetëm në këtë kompjuter: pa llogari, pa cloud, pa nisur audite.
+
+```bash
+npm run dashboard
+```
+
+Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`) dhe `--port <n>`; me `--port 0` zgjidhet një port i lirë.
+
+- **Lista:** data, siti/burimi, lloji (URL, dosje, repo), Health e faqes hyrëse dhe dy kolona të ndara:
+  - **Auditi** (`status`): *i përfunduar* kur u kryen modulet; *i pjesshëm* kur disa u anashkaluan.
+  - **Crawl-i**: faqet e kontrolluara nga ato të zbuluara, p.sh. `25/81 faqe · crawl i pjesshëm`.
+
+  Një audit i përfunduar mund të ketë crawl të pjesshëm për shkak të kufijve (25 faqe). Lista jep edhe një link për krahasim me raportin e mëparshëm të të njëjtit sit. Raportet e versioneve të vjetra (schema 1–3) hapen me seksionet që kanë.
+- **Raporti URL:**
+  - Health Score i **faqes hyrëse**, i ndarë qartë nga **mbulimi i pjesshëm i sitit** (faqe të kontrolluara/të zbuluara, pse s'u kontrolluan të tjerat, pikë vetëm për faqet e kontrolluara);
+  - biznesi;
+  - issue të filtrueshme sipas seksionit, rëndësisë dhe faqes, me prova, rekomandime dhe kufizime.
+- **Cilësia:** gjetjet e grupuara (`quality.groups`) dalin si një rresht; secila provë hapet veç, me screenshot-in e saj. Sinjalet shënohen "s'janë provë se faqja është krijuar nga AI" dhe s'hyjnë në Health.
+- **Screenshot-et** lokale (`output/visual/`) shfaqen te gjetjet ku janë provë. Te gjetjet e tjera të së njëjtës faqe shfaqen si "kontekst, jo provë". LHR shkarkohet vetëm si skedar.
+- **Auditi i skedarëve:** `path:line` (rreshti vetëm kur dihet), kontrollet e anashkaluara me arsyen, mbulimi dhe çfarë s'kontrollohet nga skedarët.
+- **Krahasimi** (`/compare`), vetëm për të njëjtin sit ose burim, ndan gjetjet në:
+  - **u përmirësua / u përkeqësua**: vetëm për kategoritë pa Lighthouse (p.sh. security, SEO teknik);
+  - **rritje/rënie e matur, kërkon konfirmim**: Performance, Accessibility, Best Practices dhe Health, kur ndryshimi kalon ±5. Çdo raport ka vetëm një matje Lighthouse, ndaj një ndryshim i vetëm s'quhet përmirësim ose përkeqësim pa disa ekzekutime;
+  - **brenda variacionit**: Lighthouse ±5;
+  - **nuk u rilevua në matjen e fundit, kërkon konfirmim**: gjetje Lighthouse (performance, accessibility, best practices) që mungon te raporti i ri. Me një matje për raport, mungesa s'provon që u zgjidh, ndaj s'hyn te "U zgjidhën";
+  - **s'krahasohet**, me arsyen:
+    - Lighthouse me version, form factor ose Chrome tjetër;
+    - crawl me faqe të ndryshme (< 90% të përbashkëta);
+    - seksion që mungon në raportin e vjetër;
+    - modul i anashkaluar;
+    - pikëzim tjetër (`scoringVersion`);
+    - **rregulla të ndryshme** (`ruleSetVersion` tjetër ose që mungon). Raportet s'mbajnë version për çdo rregull, ndaj gjetjet që u zhdukën ose u shfaqën dalin "s'krahasohen", me arsyen. Gjetjet që mbetën në të dyja shfaqen si "mbetën".
+
+  > **Pragjet janë provizore dhe të pakalibruara:** ±5 pikë për variacionin e Lighthouse dhe ≥ 90% faqe të përbashkëta që crawl-i të krahasohet. Pamja e krahasimit e thotë këtë në krye. Mund të ndryshojnë pasi të ketë më shumë ekzekutime të përsëritura të të njëjtit sit.
+
+**Siguria:** raportet, HTML-ja e kapur si provë dhe URL-të e audituara trajtohen si të dhëna të pabesuara.
+- Serveri dëgjon **vetëm në 127.0.0.1** (s'ka opsion për adresë tjetër) dhe pranon vetëm `Host` 127.0.0.1/localhost me portin e vet (mbrojtje nga DNS rebinding).
+- Pranon vetëm GET/HEAD dhe s'ndryshon asgjë.
+- Faqet **s'kanë JavaScript** (CSP `script-src 'none'`); çdo tekst escape-ohet.
+- Linket e jashtme lejohen vetëm për `http(s)`, me `noopener noreferrer`.
+- Screenshot-et dhe LHR shërbehen vetëm nga `output/` me emra të validuar (pa `..` ose symlink jashtë). Dashboard-i s'kopjon LHR apo screenshot-e brenda JSON-it.
+
+Kodi është te `src/dashboard/` (store, model, compare, views, server), i ndarë nga motori i auditimit.
+
 ## Jashtë MVP-3 (ende)
 
 Renderimi me JavaScript gjatë crawl-it dhe matja "above the fold" në viewport; klikimi i banner-it të pëlqimit (para/pas pranimit); testimi i validimit të formave në browser (dry-run pa submit); kontrolli i linkeve të jashtme dhe i skedarëve (PDF/imazhe); Health Score i përbashkët për site-in; sitemap-e `.gz`. Edhe fazat e mëvonshme mbeten jashtë: submit real formularësh, exposure probing, AI/vision (MVP-4), HTML/PDF report, dashboard, histori (SQLite), `llms.txt`, instalues Windows.
@@ -295,5 +341,6 @@ src/
   intelligence/              # priority (§4), similarity (shingle/Jaccard)
   scoring/scorer.ts          # category → health → risk modifiers (§1)
   report/                    # json, site (seksioni i crawl-it), business (MVP-3), terminal
+  dashboard/                 # dashboard lokal: store, model, compare, views (HTML pa JS), server (127.0.0.1)
 tests/                       # vitest + fixtures (HTML, LHR reale), fixture-site.ts (site lokal i kontrolluar)
 ```
