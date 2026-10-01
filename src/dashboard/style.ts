@@ -47,6 +47,14 @@ form.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:6px 0 1
 form.filters label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
 select,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);max-width:420px}
 button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin:8px 0}
+label.field input{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+.row{display:flex;gap:12px}.row label.field{flex:1}
+label.check{display:block;font-size:14px;margin:5px 0}label.check input{margin-right:6px}
+button:disabled{opacity:.5;cursor:not-allowed}button.danger{background:var(--crit);border-color:var(--crit)}
+.bigpath{font-size:15px;background:var(--code);padding:10px 12px;border-radius:8px;word-break:break-all;color:var(--text)}
+.grid.forms{grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start}
+.errors{border-left:3px solid var(--crit)}
 a{color:var(--accent)}a.ext::after{content:" ↗";font-size:11px}
 .shots{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
 .shot{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--code);width:220px}

@@ -3,6 +3,7 @@ import dns from 'node:dns';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { registerCleanup } from '../core/cleanup.js';
 import { BlockedUrlError, isBlockedIp } from '../net/url-guard.js';
 
 export interface RepoLimits {
@@ -146,17 +147,20 @@ function runGit(args: string[], opts: { cwd?: string; timeoutMs: number; onTick?
       child.kill();
     };
     const timer = setTimeout(() => kill('timeout'), opts.timeoutMs);
+    const unregister = registerCleanup(() => kill('aborted'));
     const tick = opts.onTick ? setInterval(() => {
       const why = opts.onTick!();
       if (why) kill(why);
     }, 500) : undefined;
     child.on('error', (err) => {
       clearTimeout(timer);
+      unregister();
       if (tick) clearInterval(tick);
       reject((err as NodeJS.ErrnoException).code === 'ENOENT' ? new RepoError('git s\'u gjet në PATH: instalo Git për --repo.', 'GIT_MISSING') : err);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      unregister();
       if (tick) clearInterval(tick);
       resolve({ code, stdout, stderr, killed });
     });
@@ -174,7 +178,12 @@ export async function cloneRepo(input: string, limits: RepoLimits = DEFAULT_REPO
   const template = path.join(tmp, 'template');
   const dir = path.join(tmp, 'repo');
   fs.mkdirSync(template);
-  const cleanup = () => removeTree(tmp);
+  // Kloni fshihet edhe nëse auditi ndërpritet (anulim/mbyllje e dashboard-it, Ctrl+C).
+  const unregister = registerCleanup(() => removeTree(tmp));
+  const cleanup = () => {
+    unregister();
+    removeTree(tmp);
+  };
   try {
     const args = [
       '-c', 'credential.helper=',

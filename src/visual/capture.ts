@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isAborting, once, registerCleanup } from '../core/cleanup.js';
 import type { AuditConfig } from '../core/config.js';
 import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
@@ -73,12 +74,39 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-visual-'));
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | undefined;
   let browser: Awaited<ReturnType<typeof puppeteer.connect>> | undefined;
+  // Liron Chrome-in, proxy-n dhe profilin e përkohshëm: në fund normalisht, ose menjëherë nëse auditi ndërpritet.
+  const release = once(async () => {
+    try {
+      await browser?.disconnect();
+    } catch {
+      /* injoro */
+    }
+    try {
+      await chrome?.kill();
+    } catch {
+      /* Windows: EPERM gjatë pastrimit */
+    }
+    await proxy.close();
+    await new Promise((r) => setTimeout(r, 300));
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    } catch {
+      /* profili mbetet në %TEMP%; e fshin auditi i radhës pas 24 orësh */
+    }
+  });
+  const unregister = registerCleanup(release);
   try {
     chrome = await chromeLauncher.launch({
       chromePath: config.lighthouse.chromePath,
       userDataDir,
+      // Ctrl+C e trajton motori (runCleanups): liron Chrome-in dhe fshin profilin para daljes.
+      handleSIGINT: false,
       chromeFlags: ['--headless=new', '--no-first-run', '--disable-extensions', `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--hide-scrollbars', '--mute-audio'],
     });
+    if (isAborting()) {
+      await release();
+      throw new Error('Auditi u ndërpre');
+    }
     browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}`, defaultViewport: null });
     const page = await browser.newPage();
     let lastNav = 0;
@@ -122,22 +150,7 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
     data.blockedRequests = [...proxy.blocked];
     return data;
   } finally {
-    try {
-      await browser?.disconnect();
-    } catch {
-      /* injoro */
-    }
-    try {
-      await chrome?.kill();
-    } catch {
-      /* Windows: EPERM gjatë pastrimit */
-    }
-    await proxy.close();
-    await new Promise((r) => setTimeout(r, 300));
-    try {
-      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
-    } catch {
-      /* profili mbetet në %TEMP% */
-    }
+    unregister();
+    await release();
   }
 }

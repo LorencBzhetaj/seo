@@ -44,7 +44,7 @@ Opsione:
 | `--no-visual` | Pa renderim desktop/mobile dhe screenshot-e (teksti kontrollohet gjithsesi); `--no-lighthouse` e çaktivizon edhe këtë |
 | `--json` | Shtyp JSON-in në stdout në vend të përmbledhjes |
 
-Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL/dosje e pavlefshme ose e bllokuar, `3` bllokuar nga robots.txt, `4` repo e paarritshme (private/s'ekziston), e paplotë ose tepër e madhe.
+Kodet e daljes: `0` ok (edhe `partial`), `1` gabim i brendshëm, `2` URL/dosje e pavlefshme ose e bllokuar, `3` bllokuar nga robots.txt, `4` repo e paarritshme (private/s'ekziston), e paplotë ose tepër e madhe, `130` i ndërprerë (Ctrl+C ose anulim): pa raport, me burimet e përkohshme të pastruara.
 
 Raporti ruhet si `output/{host}-{YYYYMMDD-HHmmss}.json` (dosja `output/` është në `.gitignore`).
 
@@ -307,14 +307,53 @@ Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`
 
   > **Pragjet janë provizore dhe të pakalibruara:** ±5 pikë për variacionin e Lighthouse dhe ≥ 90% faqe të përbashkëta që crawl-i të krahasohet. Pamja e krahasimit e thotë këtë në krye. Mund të ndryshojnë pasi të ketë më shumë ekzekutime të përsëritura të të njëjtit sit.
 
+### Nisja e auditeve nga dashboard-i
+
+Faqja **Nis audit** (`/audit`) ka tre formularë, me vlerat parazgjedhje të shënuara:
+- **URL:** faqe maksimale 25 (maks. 100), thellësi 3. Crawl, Lighthouse, biznes, cilësi dhe pamje janë aktive; LHR dhe anashkalimi i robots.txt janë joaktive.
+- **Dosje lokale:** shkruan shtegun absolut. Hapi i dytë tregon **dosjen reale që do të lexohet** (pas symlink/junction) dhe disa hyrje të saj, dhe kërkon konfirmim. Refuzohen:
+  - shtigjet relative;
+  - shtigjet e rrjetit `\\server\share` (në Windows mund t'i dërgojnë kredencialet një hosti tjetër);
+  - shtigjet e pajisjeve;
+  - rrënja e diskut;
+  - dosja e përdoruesit si e tërë;
+  - dosjet e sistemit.
+- **Repo publike:** vetëm `https://`, pa kredenciale. Validimi i plotë dhe kufijtë e klonimit mbeten ata të motorit.
+
+Çdo audit ekzekutohet nga **CLI-ja ekzistuese** (`src/cli.ts --progress-json`) si proces më vete, pa ndonjë implementim të dytë të kontrolleve dhe pa shell.
+- **Faqja e punës** (`/jobs/<id>`) rifreskohet çdo 2 s pa JavaScript dhe tregon:
+  - fazën që raporton motori;
+  - crawl-in si "faqja N nga maks. 25" (totali i sitit s'dihet paraprakisht);
+  - hapat;
+  - gabimin me kodin e daljes, ose linkun te raporti.
+- **Anulimi** mbyll kanalin stdin të procesit; motori ndalet vetë (shih rregullin më poshtë). Nëse s'del brenda 8 s, gjithë pema e proceseve ndalet me forcë, përfshirë Chrome-in. Puna del **"anuluar", pa raport**. Raporti shkruhet në mënyrë atomike (skedar i përkohshëm + rename), ndaj s'mbetet kurrë një raport i cunguar. Nëse anulimi vjen pasi raporti u shkrua, puna del "përfunduar" me shënim.
+- **Kufiri:** 2 audite njëkohësisht, dhe jo dy herë i njëjti objekt. Kërkesa e tretë refuzohet derisa të lirohet një vend.
+- Lista e punëve mbahet vetëm sa është hapur dashboard-i; raportet e përfunduara mbeten te `output/` dhe shfaqen sërish kur dashboard-i rihapet.
+
+**Rregulli për auditet e ndërprera** (anulim, Ctrl+C, mbyllje e dritares, ose dashboard-i i vrarë nga Task Manager):
+- Motori ndalet vetë, pa shkruar raport, dhe del me kodin 130. Para daljes:
+  - ndal Chrome-in (Lighthouse/renderimi) dhe procesin `git`;
+  - fshin profilet e përkohshme `website-auditor-*` te `%TEMP%` dhe klonin e repo-s;
+  - fshin screenshot-et e pjesshme të atij ekzekutimi (`output/visual/<ekzekutim>/`).
+- Screenshot-et i përkasin raportit: mbahen vetëm kur raporti shkruhet.
+- Proceset e auditit nisen jashtë "job object"-it të dashboard-it. Kështu, edhe kur dashboard-i vritet, motori e kupton mbylljen nga stdin-i dhe pastron vetë.
+- Rasti i vetëm që lë mbetje: vetë procesi i motorit vritet me forcë (pas 8 s anulimi pa përgjigje, ose nga Task Manager). Mbetjet më të vjetra se 24 orë i fshin auditi i radhës:
+  - dosjet `website-auditor-*` te `%TEMP%`;
+  - dosjet `output/visual/*` që s'i referon asnjë raport.
+  Dosjet me raport s'preken kurrë.
+
 **Siguria:** raportet, HTML-ja e kapur si provë dhe URL-të e audituara trajtohen si të dhëna të pabesuara.
 - Serveri dëgjon **vetëm në 127.0.0.1** (s'ka opsion për adresë tjetër) dhe pranon vetëm `Host` 127.0.0.1/localhost me portin e vet (mbrojtje nga DNS rebinding).
-- Pranon vetëm GET/HEAD dhe s'ndryshon asgjë.
-- Faqet **s'kanë JavaScript** (CSP `script-src 'none'`); çdo tekst escape-ohet.
+- Leximi bëhet me GET. **Nisja dhe anulimi** pranohen vetëm me POST nga vetë dashboard-i:
+  - `Origin` i vet, ose `Sec-Fetch-Site: same-origin`; faqet e tjera refuzohen;
+  - token CSRF i rastësishëm për çdo nisje të serverit (faqet e huaja s'e lexojnë: pa CORS);
+  - Content-Type i formularit dhe kufi prej 16 KB për kërkesën.
+- Faqet **s'kanë JavaScript** (CSP `script-src 'none'`, `form-action 'self'`); çdo tekst escape-ohet. `Referrer-Policy: same-origin`: pa referrer drejt sajteve të tjera.
 - Linket e jashtme lejohen vetëm për `http(s)`, me `noopener noreferrer`.
 - Screenshot-et dhe LHR shërbehen vetëm nga `output/` me emra të validuar (pa `..` ose symlink jashtë). Dashboard-i s'kopjon LHR apo screenshot-e brenda JSON-it.
+- Kodi i projekteve të audituara **s'ekzekutohet** (dosje/repo: vetëm lexim skedarësh).
 
-Kodi është te `src/dashboard/` (store, model, compare, views, server), i ndarë nga motori i auditimit.
+Kodi është te `src/dashboard/` (store, model, compare, views, server, jobs, forms), i ndarë nga motori i auditimit.
 
 ## Jashtë MVP-3 (ende)
 

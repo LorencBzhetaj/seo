@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Severity } from '../core/schemas.js';
+import { writeFileAtomic } from '../report/atomic.js';
 import { PROJECT_LABELS } from './project.js';
 import type { SourceAuditResult } from './run.js';
 
@@ -57,7 +58,7 @@ export function sourceReportFileName(report: SourceReport): string {
 export function writeSourceReport(report: SourceReport, outputDir: string): string {
   fs.mkdirSync(outputDir, { recursive: true });
   const p = path.join(outputDir, sourceReportFileName(report));
-  fs.writeFileSync(p, JSON.stringify(report, null, 2), 'utf8');
+  writeFileAtomic(p, JSON.stringify(report, null, 2));
   return p;
 }
 

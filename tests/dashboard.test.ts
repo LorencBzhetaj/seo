@@ -307,13 +307,13 @@ describe('Dashboard: serveri vetëm lokal dhe vetëm lexim', () => {
     expect(res.headers.get('content-security-policy')).toContain("script-src 'none'");
     expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(res.headers.get('referrer-policy')).toBe('same-origin');
     const body = await res.text();
     expect(body).not.toMatch(/<script/i);
     expect(body).toContain('e.com');
   });
 
-  it('Host i huaj (DNS rebinding) → 421; POST → 405', async () => {
+  it('Host i huaj (DNS rebinding) → 421; POST pa Origin/token → 403; PUT → 405', async () => {
     const http = await import('node:http');
     const port = new URL(base).port;
     const status = (method: string, host: string) => new Promise<number>((resolve, reject) => {
@@ -323,7 +323,8 @@ describe('Dashboard: serveri vetëm lokal dhe vetëm lexim', () => {
     });
     expect(await status('GET', 'evil.example')).toBe(421);
     expect(await status('GET', `evil.example:${port}`)).toBe(421);
-    expect(await status('POST', `127.0.0.1:${port}`)).toBe(405);
+    expect(await status('POST', `127.0.0.1:${port}`)).toBe(403);
+    expect(await status('PUT', `127.0.0.1:${port}`)).toBe(405);
     expect(await status('GET', `localhost:${port}`)).toBe(200);
   });
 

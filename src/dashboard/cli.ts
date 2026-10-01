@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { CANCEL_GRACE_MS } from './jobs.js';
 import { startDashboard } from './server.js';
 
 /**
- * Dashboard-i lokal: lexon raportet ekzistuese nga output/ dhe i shfaq në browser.
- * I ndarë nga motori i auditimit — s'nis asnjë audit dhe s'shkruan asgjë.
+ * Dashboard-i lokal: raportet e output/ dhe nisja e auditeve (përmes CLI-së së motorit, si procese më vete).
  */
 const { values } = parseArgs({
   options: {
@@ -18,7 +18,7 @@ const { values } = parseArgs({
 if (values.help) {
   console.log(`Përdorimi: npm run dashboard -- [--out output] [--port 4780]
 
-Hap raportet e output/ në http://127.0.0.1:<port>/ — vetëm në këtë kompjuter (127.0.0.1),
+Hap raportet e output/ dhe nis audite në http://127.0.0.1:<port>/ — vetëm në këtë kompjuter (127.0.0.1),
 pa llogari dhe pa cloud. Ndalo me Ctrl+C.`);
   process.exit(0);
 }
@@ -31,7 +31,21 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 
 const outputDir = path.resolve(values.out);
 startDashboard({ outputDir, port })
-  .then(({ url }) => {
+  .then(({ url, server, jobs }) => {
+    // Ctrl+C / mbyllja e dritares: anulo auditet në punë dhe prit që motori të lirojë Chrome-in dhe skedarët
+    // e përkohshëm. Edhe nëse dashboard-i vritet pa arritur këtu, stdin-i i çdo auditi mbyllet dhe motori
+    // pastron vetë.
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      const n = jobs.running().length;
+      if (n) console.log(`Po anulohen ${n} audite në punë…`);
+      server.close();
+      setTimeout(() => process.exit(0), CANCEL_GRACE_MS + 1000).unref();
+      void jobs.cancelAll().finally(() => process.exit(0));
+    };
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) process.once(sig, stop);
     console.log(`Dashboard-i: ${url}`);
     console.log(`Raportet: ${outputDir}`);
     console.log('Vetëm lokal (127.0.0.1). Ndalo me Ctrl+C.');

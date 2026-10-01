@@ -35,11 +35,12 @@ const badge = (cls: string, text: string) => html`<span class="badge b-${cls}">$
 const sevBadge = (s: Sev) => html`<span class="badge sev-${s}">${SEV_LABELS[s]}</span>`;
 const scoreText = (n: number | null) => (n === null ? '—' : String(n));
 
-export function layout(title: string, body: SafeHtml): string {
+/** refreshSeconds: rifreskim me <meta refresh> (pa JavaScript) për punët në ekzekutim. */
+export function layout(title: string, body: SafeHtml, refreshSeconds?: number): string {
   return html`<!doctype html>
 <html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>${title} · SEO Tool</title><link rel="stylesheet" href="/style.css"></head>
-<body><header class="top"><span class="brand">SEO Tool · Dashboard</span><nav><a href="/">Raportet</a><a href="/compare">Krahaso</a></nav>
+<meta name="referrer" content="same-origin">${refreshSeconds ? html`<meta http-equiv="refresh" content="${refreshSeconds}">` : ''}<title>${title} · SEO Tool</title><link rel="stylesheet" href="/style.css"></head>
+<body><header class="top"><span class="brand">SEO Tool · Dashboard</span><nav><a href="/">Raportet</a><a href="/audit">Nis audit</a><a href="/jobs">Punët</a><a href="/compare">Krahaso</a></nav>
 <span class="local">vetëm lokal · 127.0.0.1 · pa llogari, pa cloud</span></header>
 <main>${body}</main></body></html>`.value;
 }

@@ -620,7 +620,22 @@ Sinjale, **jo provë autorësie**:
 - **Kufizime:**
   - s'ka histori në SQLite: lista lexohet nga skedarët në çdo kërkesë;
   - krahasimi është për dy raporte, jo trend. Pragjet (±5 Lighthouse, ≥ 90% faqe të përbashkëta) janë provizore. Ndryshimet e Lighthouse nga një matje shënohen "e matur, kërkon konfirmim". Me `ruleSetVersion` tjetër, gjetjet e reja ose të zhdukura dalin "s'krahasohen";
-  - s'nis audite nga ndërfaqja.
+  - lista e punëve mbahet vetëm në memorie (sa është hapur dashboard-i).
+- **Nisja e auditeve** (në pritje të shqyrtimit):
+  - `jobs` e ekzekuton CLI-në ekzistuese si proces (`--progress-json`: ngjarjet status/hap/crawl/raport/gabim që motori raporton realisht), pa implementim të dytë.
+  - Anulimi mbyll stdin-in (`--exit-with-stdin`). Pas 8 s pa dalje, pema e proceseve ndalet me forcë. Raportet shkruhen në mënyrë atomike.
+  - Ndërprerja (`src/core/cleanup.ts`): çdo burim i përkohshëm regjistrohet sa është gjallë dhe lirohet kur auditi ndërpritet (anulim, SIGINT/SIGHUP/SIGBREAK, stdin i mbyllur, EPIPE):
+    - Chrome + profili;
+    - kloni + `git`;
+    - `output/visual/<ekzekutim>` pa raport.
+    Pas ndërprerjes s'shkruhet raport, dalja është me kod 130.
+  - Proceset nisen me `detached`, jashtë job object-it të Node-it në Windows (ai i vret fëmijët pa pastrim kur vritet dashboard-i).
+  - Mbetjet nga vrasja e detyruar e motorit fshihen nga auditi i radhës pas 24 orësh:
+    - `%TEMP%/website-auditor-*`;
+    - `visual/*` pa raport.
+  - Kufiri: 2 audite njëkohësisht.
+  - `forms` validon URL-në, repo-n dhe dosjen (shteg real + konfirmim; pa rrjet/rrënjë/sistem).
+  - POST-et mbrohen me Origin/Sec-Fetch-Site + token CSRF.
 
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AuditRun } from '../core/run.js';
 import type { AuditResult } from '../core/schemas.js';
+import { writeFileAtomic } from './atomic.js';
 import { buildBusinessSection } from './business.js';
 import { buildQualitySection } from './quality.js';
 import { buildSiteSection } from './site.js';
@@ -120,10 +121,10 @@ export function writeReport(
   if (rawLhr !== undefined) {
     const name = lhrFileName(report);
     lhrPath = path.join(outputDir, name);
-    fs.writeFileSync(lhrPath, JSON.stringify(rawLhr), 'utf8');
+    writeFileAtomic(lhrPath, JSON.stringify(rawLhr));
     written = { ...report, lighthouse: { ...report.lighthouse, lhrFile: name } };
   }
   const reportPath = path.join(outputDir, reportFileName(written));
-  fs.writeFileSync(reportPath, `${JSON.stringify(written, null, 2)}\n`, 'utf8');
+  writeFileAtomic(reportPath, `${JSON.stringify(written, null, 2)}\n`);
   return { reportPath, lhrPath, report: written };
 }

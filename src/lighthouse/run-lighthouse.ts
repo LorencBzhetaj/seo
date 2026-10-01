@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isAborting, once, registerCleanup } from '../core/cleanup.js';
 import type { AuditConfig } from '../core/config.js';
 import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
@@ -131,10 +132,28 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
   const proxy = await startGuardProxy(config.allowedPrivateHosts);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-chrome-'));
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | undefined;
+  // Liron Chrome-in, proxy-n dhe profilin e përkohshëm: në fund normalisht, ose menjëherë nëse auditi ndërpritet.
+  const release = once(async () => {
+    try {
+      await chrome?.kill();
+    } catch {
+      /* Windows: EPERM gjatë pastrimit të profilit — injorohet */
+    }
+    await proxy.close();
+    await new Promise((r) => setTimeout(r, 500));
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    } catch {
+      /* profili mbetet në %TEMP% nëse Chrome ende e mban të kyçur; e fshin auditi i radhës pas 24 orësh */
+    }
+  });
+  const unregister = registerCleanup(release);
   try {
     chrome = await chromeLauncher.launch({
       chromePath: config.lighthouse.chromePath,
       userDataDir,
+      // Ctrl+C e trajton motori (runCleanups): liron Chrome-in dhe fshin profilin para daljes.
+      handleSIGINT: false,
       chromeFlags: [
         '--headless=new',
         '--no-first-run',
@@ -145,6 +164,11 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
       ],
     });
+    // Ndërprerja erdhi ndërsa Chrome po nisej: lirohet menjëherë, pa nisur Lighthouse.
+    if (isAborting()) {
+      await release();
+      throw new Error('Auditi u ndërpre');
+    }
     const result = await withTimeout(
       lighthouse(url, {
         port: chrome.port,
@@ -187,17 +211,7 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
       rawLhr: config.lighthouse.saveLhr ? lhr : undefined,
     };
   } finally {
-    try {
-      await chrome?.kill();
-    } catch {
-      /* Windows: EPERM gjatë pastrimit të profilit — injorohet */
-    }
-    await proxy.close();
-    await new Promise((r) => setTimeout(r, 500));
-    try {
-      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
-    } catch {
-      /* profili i përkohshëm mbetet në %TEMP% nëse Chrome ende e mban të kyçur */
-    }
+    unregister();
+    await release();
   }
 }
