@@ -13,7 +13,7 @@ import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsFo
 import { findBrowser, type BrowserLookup } from '../core/browser.js';
 import { gitAvailable } from '../core/git.js';
 import { loadConfig } from '../core/config.js';
-import { comparePickerView, compareView, errorView, listView, sourceReportView, urlReportView, type Files, type Query } from './views.js';
+import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, urlReportView, type Files, type Query } from './views.js';
 
 /**
  * Serveri lokal i dashboard-it.
@@ -157,6 +157,15 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
       if (p.startsWith('/jobs/')) {
         const job = jobs.get(p.slice('/jobs/'.length));
         return job ? page(200, jobView(job, csrf)) : page(404, errorView('Puna s\'u gjet', 'Puna s\'ekziston (lista mbahet vetëm sa është hapur dashboard-i).'));
+      }
+      // Galeria e pamjeve: /report/<emri>/visual (emri validohet si çdo raport; imazhet vetëm përmes /shot/)
+      const gal = p.match(/^\/report\/([^/]+)\/visual$/);
+      if (gal) {
+        const name = decodeURIComponent(gal[1]!);
+        const r = readReport(opts.outputDir, name);
+        if (!r.ok) return page(404, errorView('Raporti s\'u hap', r.reason));
+        if (kindOf(r.report) !== 'url') return page(404, errorView('Pa pamje', 'Auditet e skedarëve s\'kanë pamje të renderuara.'));
+        return page(200, galleryView(name, r.report, q, files));
       }
       if (p.startsWith('/report/')) {
         const name = decodeURIComponent(p.slice('/report/'.length));

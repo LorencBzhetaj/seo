@@ -342,7 +342,16 @@ Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`
   - biznesi;
   - issue të filtrueshme sipas seksionit, rëndësisë dhe faqes, me prova, rekomandime dhe kufizime.
 - **Cilësia:** gjetjet e grupuara (`quality.groups`) dalin si një rresht; secila provë hapet veç, me screenshot-in e saj. Sinjalet shënohen "s'janë provë se faqja është krijuar nga AI" dhe s'hyjnë në Health.
-- **Screenshot-et** lokale (`output/visual/`) shfaqen te gjetjet ku janë provë. Te gjetjet e tjera të së njëjtës faqe shfaqen si "kontekst, jo provë". LHR shkarkohet vetëm si skedar.
+- **Pamjet vizuale:**
+  - **Ku:** në krye të raportit, "Pamjet vizuale (N)" dhe "Sinjalet e cilësisë". Paneli "Pamjet e renderuara" shfaq të gjitha pamjet, ndërsa **Hap galerinë** (`/report/<raporti>/visual`) jep filtra sipas faqes dhe pajisjes.
+  - **Pamja e madhe:** klikimi mbi një pamje e hap të madhe, me faqen, llojin e faqes, pajisjen, lartësinë e faqes, datën e auditit, skedarin dhe sinjalet e lidhura. Madhësia e viewport-it s'ruhet në raportet e deritanishme, prandaj shfaqet si "s'është ruajtur".
+  - **Te secili sinjal**, pamjet ndahen qartë:
+    - **"Provë e sinjalit"**: vetëm kur shtegu i screenshot-it në provë përputhet saktësisht me një pamje të raportit të së njëjtës faqe; pajisja merret nga ajo pamje;
+    - **"Pamje për kontekst"**: e njëjta URL, por jo provë.
+  - **Mungesat thuhen shprehimisht:** screenshot që mungon lokalisht, shteg i pavlefshëm (s'shërbehet), faqe pa pamje të renderuar, pamje që s'u renderua.
+  - **Raportet e vjetra** pa `quality` ose pa pamje hapen pa gabim, me arsyen.
+  - **Jashtë Health Score:** pamjet dhe sinjalet s'hyjnë në të dhe s'janë provë se një faqe është krijuar nga AI.
+  - LHR shkarkohet vetëm si skedar.
 - **Auditi i skedarëve:** `path:line` (rreshti vetëm kur dihet), kontrollet e anashkaluara me arsyen, mbulimi dhe çfarë s'kontrollohet nga skedarët.
 - **Krahasimi** (`/compare`), vetëm për të njëjtin sit ose burim, ndan gjetjet në:
   - **u përmirësua / u përkeqësua**: vetëm për kategoritë pa Lighthouse (p.sh. security, SEO teknik);

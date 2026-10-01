@@ -257,8 +257,10 @@ describe('Dashboard: përmbajtja e pabesuar s\'ekzekutohet', () => {
     expect(out).toContain('&lt;img src=x onerror=alert(4)&gt;');
     // URL-ja javascript: shfaqet si tekst, jo si link
     expect(out).toContain('<span class="plain">javascript:alert(document.cookie)</span>');
-    // screenshot me emër të rrezikshëm: vetëm i koduar në URL, jo HTML
-    expect(out).toContain('/shot/visual/%22%3E%3Cscript%3Ealert(6)%3C/script%3E.jpg');
+    // screenshot me emër të rrezikshëm: s'lidhet fare (shteg i pavlefshëm), shfaqet vetëm si tekst i escape-uar
+    expect(out).not.toContain('/shot/visual/%22');
+    expect(out).toContain('Shteg i pavlefshëm screenshot-i');
+    expect(out).toContain('visual/&quot;&gt;&lt;script&gt;alert(6)&lt;/script&gt;.jpg');
     expect(out).not.toContain('"><script');
   });
 

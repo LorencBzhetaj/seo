@@ -67,9 +67,14 @@ export function resolveInside(root: string, rel: string): string | undefined {
   }
 }
 
+/** Shteg screenshot-i i pranueshëm: vetëm visual/<dosje>/<skedar>.jpg|png, pa ".." dhe pa ndarës të tjerë. */
+export function isShotRel(rel: string): boolean {
+  return /^visual\/[\p{L}\p{N}_][\p{L}\p{N}._-]*\/[\p{L}\p{N}_][\p{L}\p{N}._-]*\.(jpe?g|png)$/u.test(rel) && !rel.includes('..');
+}
+
 /** Screenshot i një raporti: vetëm output/visual/<dosje>/<skedar>.jpg|png, që ekziston. */
 export function screenshotPath(outputDir: string, rel: string): string | undefined {
-  if (!/^visual\/[\p{L}\p{N}_][\p{L}\p{N}._-]*\/[\p{L}\p{N}_][\p{L}\p{N}._-]*\.(jpe?g|png)$/u.test(rel) || rel.includes('..')) return undefined;
+  if (!isShotRel(rel)) return undefined;
   const p = resolveInside(path.join(outputDir, 'visual'), rel.slice('visual/'.length));
   return p && fs.statSync(p).isFile() ? p : undefined;
 }

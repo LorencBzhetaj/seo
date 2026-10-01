@@ -1,8 +1,10 @@
 import { BUSINESS_CATEGORY_LABELS, CATEGORY_LABELS, QUALITY_CATEGORY_LABELS, SITE_CATEGORY_LABELS } from '../core/schemas.js';
 import { PROVISIONAL_THRESHOLDS, type CompareResult, type IssueChange, type ScoreRow } from './compare.js';
 import { externalLink, html, truncate, type SafeHtml } from './html.js';
-import { captures, fileRef, SECTION_LABELS, SEV_LABELS, SEVERITIES, sourceFindings, urlIssues, type Capture, type IssueView, type Section, type Sev } from './model.js';
+import { fileRef, SECTION_LABELS, SEV_LABELS, SEVERITIES, sourceFindings, urlIssues, type IssueView, type Section, type Sev } from './model.js';
 import { arr, kindOf, num, obj, str, summarize, type ListResult, type Obj, type ReportSummary } from './store.js';
+import { galleryBody, shotStateOf, signalShotsBlock, visualPanel } from './views-visual.js';
+import { gallery, type Gallery } from './visual.js';
 
 /** Qasja te skedarët lokalë (screenshot, LHR): vetëm kontroll ekzistence, pa lexim përmbajtjeje. */
 export interface Files {
@@ -21,7 +23,6 @@ const reportHref = (file: string, q?: Query) => {
   const qs = q ? new URLSearchParams(Object.entries(q).filter((e): e is [string, string] => !!e[1])).toString() : '';
   return `/report/${encodeURIComponent(file)}${qs ? `?${qs}` : ''}`;
 };
-const shotHref = (rel: string) => `/shot/${rel.split('/').map(encodeURIComponent).join('/')}`;
 
 export function fmtDate(iso?: string): string {
   if (!iso) return '—';
@@ -78,24 +79,22 @@ export function listView(list: ListResult, openReports?: SafeHtml): string {
 
 // ---------------------------------------------------------------- Prova dhe screenshot-e
 
-function shotFigure(files: Files, rel: string, caption: string, viewport = ''): SafeHtml {
-  if (!files.shotExists(rel)) return html`<div class="warnbox">Screenshot-i mungon lokalisht: <span class="code">${rel}</span></div>`;
-  return html`<figure class="shot ${viewport === 'mobile' ? 'mobile' : ''}"><a href="${shotHref(rel)}"><img src="${shotHref(rel)}" alt="${caption}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
-}
-
-function evidenceBlock(i: IssueView, files: Files): SafeHtml {
-  const shots = i.evidence.filter((e) => e.type === 'screenshot' && e.raw);
+/** Prova tekstuale; provat screenshot shfaqen te "Provë e sinjalit" (me përputhje të vërtetuar). */
+function evidenceBlock(i: IssueView): SafeHtml {
   const other = i.evidence.filter((e) => !(e.type === 'screenshot' && e.raw));
   return html`${other.map((e) => html`<div class="ev"><b>${e.type || 'provë'}</b>${e.url && e.url !== i.url ? html` · ${e.url}` : ''}
 ${truncate(e.detected, 1500)}${e.expected ? html`
 <b>pritej:</b> ${truncate(e.expected, 400)}` : ''}${e.raw ? html`
-<b>raw:</b> ${truncate(e.raw, 1500)}` : ''}</div>`)}
-${shots.length ? html`<div class="shots">${shots.map((e) => shotFigure(files, e.raw, `provë: ${e.raw.split('/').pop() ?? ''}`, /-mobile\./.test(e.raw) ? 'mobile' : ''))}</div>` : ''}`;
+<b>raw:</b> ${truncate(e.raw, 1500)}` : ''}</div>`)}`;
 }
 
-function issueDetails(i: IssueView, files: Files, caps: Capture[], open = false): SafeHtml {
-  const evShots = new Set(i.evidence.filter((e) => e.type === 'screenshot').map((e) => e.raw));
-  const context = caps.filter((c) => c.status === 'ok' && c.screenshot && i.pages.includes(c.url) && !evShots.has(c.screenshot));
+/** Konteksti i një raporti URL për pamjet e issue-ve. */
+interface ShotCtx {
+  file: string;
+  g: Gallery;
+}
+
+function issueDetails(i: IssueView, ctx: ShotCtx, open = false): SafeHtml {
   const isSignal = i.section === 'quality';
   return html`<details class="issue" ${open ? html`open` : ''}><summary>${sevBadge(i.severity)} <strong>${i.message || i.code}</strong>
 <span class="code">${i.code}</span> <span class="badge">${SECTION_LABELS[i.section]}</span>
@@ -107,9 +106,9 @@ ${i.url ? html`<dt>Faqja</dt><dd>${externalLink(i.url)}</dd>` : ''}
 ${i.whyItMatters ? html`<dt>Pse ka rëndësi</dt><dd>${i.whyItMatters}</dd>` : ''}
 ${i.fix ? html`<dt>${isSignal ? 'Sugjerim' : 'Rekomandim'}</dt><dd>${i.fix}</dd>` : ''}
 </dl>
-<h3>Prova</h3>${evidenceBlock(i, files)}
+<h3>Prova</h3>${evidenceBlock(i)}
 ${i.pages.length > 1 ? html`<h3>Faqet (${i.pages.length})</h3><ul class="plain">${i.pages.slice(0, 30).map((p) => html`<li>${externalLink(p)}</li>`)}</ul>${i.pages.length > 30 ? html`<p class="note">… +${i.pages.length - 30} në JSON</p>` : ''}` : ''}
-${context.length ? html`<h3>Pamje e faqes <span class="note">(kontekst, jo provë e kësaj gjetjeje)</span></h3><div class="shots">${context.map((c) => shotFigure(files, c.screenshot, `${c.viewport} · ${c.url}`, c.viewport))}</div>` : ''}
+${signalShotsBlock(ctx.file, i, ctx.g)}
 </div></details>`;
 }
 
@@ -128,7 +127,7 @@ function coverageText(c: Obj): string {
 export function urlReportView(file: string, r: Obj, q: Query, files: Files): string {
   const s = summarize(file, r);
   const issues = urlIssues(r);
-  const caps = captures(r);
+  const ctx: ShotCtx = { file, g: gallery(r, shotStateOf(files)) };
   const mods = statusOfModules(r);
   const health = obj(r.health);
   const site = obj(r.site);
@@ -178,11 +177,13 @@ ${Object.entries(BUSINESS_CATEGORY_LABELS).map(([k, label]) => {
     s.target,
     html`<h1>${s.target}</h1>
 <p class="sub">${externalLink(str(r.url))} · ${fmtDate(s.date)} · ${badge(s.status, STATUS_LABELS[s.status])} · schema ${s.schema} · rregullat ${str(r.ruleSetVersion)} · <span class="code">${file}</span></p>
+${quickNav(file, issues, ctx.g)}
 ${arr(r.partialModules).length ? html`<div class="warnbox">Module të pjesshme/të anashkaluara: ${arr(r.partialModules).map((m) => str(obj(m).module) || str(m)).join(', ')}</div>` : ''}
 <div class="grid">${homePanel}${sitePanel}</div>
+${visualPanel(file, ctx.g)}
+${qualityPanel(r, issues, ctx)}
 ${businessPanel}
-${qualityPanel(r, issues, caps, files)}
-${issuesPanel(file, issues, caps, q, files)}
+${issuesPanel(file, issues, q, ctx)}
 ${recommendationsPanel(r)}
 ${limitationsPanel(arr(r.limitations).map(str))}`,
   );
@@ -196,10 +197,21 @@ function lhrBlock(r: Obj, files: Files): SafeHtml | '' {
   return html`${meta}<p class="note">LHR i plotë: ${files.lhrExists(name) ? html`<a href="/lhr/${encodeURIComponent(name)}">${name}</a> (shkarkim lokal; mund të përmbajë URL, kërkesa rrjeti dhe screenshot-e — mos e ndaj pa e kontrolluar)` : html`<span class="code">${name}</span> (mungon lokalisht)`}</p>`;
 }
 
-function qualityPanel(r: Obj, issues: IssueView[], caps: Capture[], files: Files): SafeHtml | '' {
+/** Lidhje të shpejta te pamjet dhe sinjalet (të dyja jashtë Health Score). */
+function quickNav(file: string, issues: IssueView[], g: Gallery): SafeHtml {
+  const signals = issues.filter((i) => i.section === 'quality');
+  const content = signals.filter((i) => i.module === 'content-quality').length;
+  const visual = signals.filter((i) => i.module === 'visual-identity').length;
+  const shots = g.shots.filter((s) => s.status === 'ok').length;
+  return html`<nav class="quick"><span class="note">Shqyrtim njerëzor (jashtë Health Score):</span>
+${g.available ? html`<a href="/report/${encodeURIComponent(file)}/visual">Pamjet vizuale (${shots})</a>` : html`<span class="note">pa pamje të renderuara</span>`}
+<a href="#signals">Sinjalet e cilësisë (${signals.length}: ${content} përmbajtje, ${visual} pamje${signals.length - content - visual > 0 ? `, ${signals.length - content - visual} të tjera` : ''})</a></nav>`;
+}
+
+function qualityPanel(r: Obj, issues: IssueView[], ctx: ShotCtx): SafeHtml | '' {
   const q = obj(r.quality);
-  if (!r.quality) return '';
-  if (q.status === 'skipped') return html`<section class="panel signals"><h2>Cilësia & pamja</h2><p class="note">skipped: ${str(q.reason)}</p></section>`;
+  if (!r.quality) return html`<section class="panel signals" id="signals"><h2>Cilësia & pamja</h2><p class="note">Ky raport s'ka seksionin e cilësisë së përmbajtjes dhe të pamjes (raport i vjetër).</p></section>`;
+  if (q.status === 'skipped') return html`<section class="panel signals" id="signals"><h2>Cilësia & pamja</h2><p class="note">skipped: ${str(q.reason)}</p></section>`;
   const qIssues = issues.filter((i) => i.section === 'quality');
   // Grupet nga raporti (quality.groups); raportet pa groups: një grup për kod.
   const groups = arr(q.groups).length
@@ -209,9 +221,7 @@ function qualityPanel(r: Obj, issues: IssueView[], caps: Capture[], files: Files
         return { code, summary: l.length > 1 ? `${l.length}× ${code}` : l[0]!.message, pages: l.flatMap((i) => i.pages), severity: l[0]!.severity };
       });
   const statuses = obj(q.statuses);
-  const okCaps = caps.filter((c) => c.status === 'ok' && c.screenshot);
-  const byPage = [...new Set(okCaps.map((c) => c.url))];
-  return html`<section class="panel signals"><h2>Cilësia e përmbajtjes & identiteti vizual <span class="note">(sinjale, pa score)</span></h2>
+  return html`<section class="panel signals" id="signals"><h2>Cilësia e përmbajtjes & identiteti vizual <span class="note">(sinjale, pa score)</span></h2>
 <div class="warnbox">Sinjale për shqyrtim njerëzor. <strong>S'janë provë se faqja është krijuar nga AI</strong> dhe <strong>s'hyjnë në Health Score</strong>. "AI slop" është vetëm emërtim për sinjale që kërkojnë verifikim.</div>
 <p class="note">${Object.entries(QUALITY_CATEGORY_LABELS).map(([k, label]) => {
   const st = obj(statuses[k]);
@@ -221,14 +231,12 @@ ${groups.length ? groups.map((g) => {
   const members = qIssues.filter((i) => i.code === g.code && (g.pages.length === 0 || i.pages.some((p) => g.pages.includes(p))));
   return html`<details class="issue"><summary>${sevBadge((SEVERITIES.includes(g.severity as Sev) ? g.severity : 'low') as Sev)} <strong>${g.summary}</strong> <span class="code">${g.code}</span>
 <span class="note">${members.length} gjetje · ${new Set(g.pages).size} faqe</span></summary>
-<div class="body"><p class="note">Hap secilën gjetje për provën e saj të plotë (URL, provë, screenshot).</p>${members.map((i) => issueDetails(i, files, caps))}</div></details>`;
+<div class="body"><p class="note">Hap secilën gjetje për provën e saj të plotë (URL, provë, screenshot).</p>${members.map((i) => issueDetails(i, ctx))}</div></details>`;
 }) : html`<p class="note">Asnjë sinjal cilësie në këtë raport.</p>`}
-${byPage.length ? html`<details class="gallery"><summary>Pamjet e renderuara (${okCaps.length}, desktop + mobile)</summary>${byPage.map((u) => html`<div><span class="note">${u}</span><div class="shots">${okCaps.filter((c) => c.url === u).map((c) => shotFigure(files, c.screenshot, `${c.viewport}${c.pageType ? ` · ${c.pageType}` : ''}`, c.viewport))}</div></div>`)}</details>` : ''}
-${caps.filter((c) => c.status !== 'ok').map((c) => html`<div class="warnbox">Pamje e pa-renderuar: ${c.viewport} ${c.url} — ${c.reason}</div>`)}
 </section>`;
 }
 
-function issuesPanel(file: string, issues: IssueView[], caps: Capture[], q: Query, files: Files): SafeHtml {
+function issuesPanel(file: string, issues: IssueView[], q: Query, ctx: ShotCtx): SafeHtml {
   const section = (Object.keys(SECTION_LABELS) as Section[]).includes(q.section as Section) ? (q.section as Section) : undefined;
   const sev = SEVERITIES.includes(q.sev as Sev) ? (q.sev as Sev) : undefined;
   const pages = [...new Set(issues.flatMap((i) => i.pages))].sort();
@@ -244,7 +252,7 @@ function issuesPanel(file: string, issues: IssueView[], caps: Capture[], q: Quer
 <label>Faqja<select name="page">${opt('', `Të gjitha (${pages.length})`)}${pages.slice(0, 500).map((p) => opt(p, truncate(p, 70), page))}</select></label>
 <button type="submit">Filtro</button> <a href="${reportHref(file)}#issues">pastro</a></form>
 <p class="note">${shown.length} nga ${issues.length}. Renditja: rëndësia, pastaj prioriteti.</p>
-${shown.map((i) => issueDetails(i, files, caps))}</section>`;
+${shown.map((i) => issueDetails(i, ctx))}</section>`;
 }
 
 function recommendationsPanel(r: Obj): SafeHtml {
@@ -375,3 +383,10 @@ export function errorView(title: string, message: string): string {
   return layout(title, html`<h1>${title}</h1><div class="warnbox">${message}</div><p><a href="/">← Raportet</a></p>`);
 }
 
+
+// ---------------------------------------------------------------- Galeria e pamjeve
+
+export function galleryView(file: string, r: Obj, q: Query, files: Files): string {
+  const s = summarize(file, r);
+  return layout(`Pamjet · ${s.target}`, galleryBody(file, s.target, gallery(r, shotStateOf(files)), urlIssues(r), q));
+}
