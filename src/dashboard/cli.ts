@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { CANCEL_GRACE_MS } from './jobs.js';
 import { startDashboard } from './server.js';
+import { installShutdown } from './shutdown.js';
 
 /**
  * Dashboard-i lokal: raportet e output/ dhe nisja e auditeve (përmes CLI-së së motorit, si procese më vete).
@@ -32,20 +32,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 const outputDir = path.resolve(values.out);
 startDashboard({ outputDir, port })
   .then(({ url, server, jobs }) => {
-    // Ctrl+C / mbyllja e dritares: anulo auditet në punë dhe prit që motori të lirojë Chrome-in dhe skedarët
-    // e përkohshëm. Edhe nëse dashboard-i vritet pa arritur këtu, stdin-i i çdo auditi mbyllet dhe motori
-    // pastron vetë.
-    let stopping = false;
-    const stop = () => {
-      if (stopping) return;
-      stopping = true;
-      const n = jobs.running().length;
-      if (n) console.log(`Po anulohen ${n} audite në punë…`);
-      server.close();
-      setTimeout(() => process.exit(0), CANCEL_GRACE_MS + 1000).unref();
-      void jobs.cancelAll().finally(() => process.exit(0));
-    };
-    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) process.once(sig, stop);
+    installShutdown(server, jobs);
     console.log(`Dashboard-i: ${url}`);
     console.log(`Raportet: ${outputDir}`);
     console.log('Vetëm lokal (127.0.0.1). Ndalo me Ctrl+C.');

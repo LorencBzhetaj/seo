@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { registerCleanup } from '../core/cleanup.js';
 import { BlockedUrlError, isBlockedIp } from '../net/url-guard.js';
+import { removeSync } from '../core/fsutil.js';
 
 export interface RepoLimits {
   /** Madhësia maksimale e dosjes së klonuar (bytes); tejkalimi e ndërpret klonimin. */
@@ -118,7 +119,7 @@ export function removeTree(dir: string): void {
       }
     }
   }
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  removeSync(dir, { retries: 5, retryDelayMs: 200 });
 }
 
 function runGit(args: string[], opts: { cwd?: string; timeoutMs: number; onTick?: () => string | null }): Promise<{ code: number | null; stdout: string; stderr: string; killed?: string }> {

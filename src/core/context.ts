@@ -188,6 +188,7 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
   // 8. Lighthouse mobile për faqen hyrëse
   let lighthouse: Probe<LighthouseData>;
   if (!config.lighthouse.enabled) lighthouse = { status: 'skipped', reason: 'Lighthouse u çaktivizua (--no-lighthouse)' };
+  else if (config.lighthouse.unavailableReason) lighthouse = { status: 'skipped', reason: config.lighthouse.unavailableReason };
   else if (main.status !== 'ok') lighthouse = { status: 'skipped', reason: 'Faqja hyrëse s\'u arrit; Lighthouse s\'u ekzekutua' };
   else if (!hooks.runLighthouse) lighthouse = { status: 'skipped', reason: 'Runner i Lighthouse mungon' };
   else {

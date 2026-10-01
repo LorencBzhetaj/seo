@@ -64,5 +64,7 @@ a{color:var(--accent)}a.ext::after{content:" ↗";font-size:11px}
 .warnbox{background:var(--chip);border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0}
 .muted{color:var(--muted)}
 .row-actions a{margin-right:10px;white-space:nowrap}
+div.row-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
+form.inline{display:inline;margin:0}button.secondary{background:var(--panel);color:var(--accent)}
 @media (max-width:700px){main{padding:12px}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}.ev,pre{max-width:calc(100vw - 60px)}header.top{padding:10px 12px}th:nth-child(n+6),td:nth-child(n+6){display:none}}
 `;

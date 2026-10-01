@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isAborting, once, registerCleanup } from '../core/cleanup.js';
+import { AbortedError, isAborting, once, registerCleanup, waitForExit } from '../core/cleanup.js';
 import type { AuditConfig } from '../core/config.js';
 import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
 import { PROBE_SCRIPT, type ProbeResult } from './probe.js';
+import { removeSync } from '../core/fsutil.js';
 
 export type Viewport = 'desktop' | 'mobile';
 
@@ -71,6 +72,11 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
   const data: VisualData = { captures: [], screenshotsDir: relDir, limits: { maxPages, navigationTimeoutMs: NAV_TIMEOUT_MS, delayMs, maxScreenshotHeight: MAX_SCREENSHOT_HEIGHT }, blockedRequests: [] };
 
   const proxy = await startGuardProxy(config.allowedPrivateHosts);
+  // Ndërprerja erdhi ndërkohë (p.sh. gjatë një prove të dytë): s'krijohet profil dhe s'niset Chrome.
+  if (isAborting()) {
+    await proxy.close();
+    throw new AbortedError();
+  }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-visual-'));
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | undefined;
   let browser: Awaited<ReturnType<typeof puppeteer.connect>> | undefined;
@@ -83,13 +89,15 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
     }
     try {
       await chrome?.kill();
+      await waitForExit(chrome?.process);
     } catch {
       /* Windows: EPERM gjatë pastrimit */
     }
     await proxy.close();
     await new Promise((r) => setTimeout(r, 300));
     try {
-      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+      // Chrome mund ta mbajë profilin disa sekonda pas ndalimit (sidomos kur ndalet nga mbyllja e dritares).
+      removeSync(userDataDir, { retries: 12, retryDelayMs: 500 });
     } catch {
       /* profili mbetet në %TEMP%; e fshin auditi i radhës pas 24 orësh */
     }
@@ -105,7 +113,7 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
     });
     if (isAborting()) {
       await release();
-      throw new Error('Auditi u ndërpre');
+      throw new AbortedError();
     }
     browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}`, defaultViewport: null });
     const page = await browser.newPage();

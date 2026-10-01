@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isAborting, once, registerCleanup } from '../core/cleanup.js';
+import { AbortedError, isAborting, once, registerCleanup, waitForExit } from '../core/cleanup.js';
 import type { AuditConfig } from '../core/config.js';
 import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
+import { removeSync } from '../core/fsutil.js';
 
 /** Pjesa e LHR që përdorin modulet (tipizim minimal, jo i plotë). */
 export interface LhAuditRef {
@@ -130,19 +131,26 @@ export async function runLighthouse(url: string, config: AuditConfig): Promise<L
 async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit<LighthouseData, 'failedAttempts'>> {
   const [{ default: lighthouse }, chromeLauncher] = await Promise.all([import('lighthouse'), import('chrome-launcher')]);
   const proxy = await startGuardProxy(config.allowedPrivateHosts);
+  // Ndërprerja erdhi ndërkohë (p.sh. gjatë një prove të dytë): s'krijohet profil dhe s'niset Chrome.
+  if (isAborting()) {
+    await proxy.close();
+    throw new AbortedError();
+  }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-chrome-'));
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | undefined;
   // Liron Chrome-in, proxy-n dhe profilin e përkohshëm: në fund normalisht, ose menjëherë nëse auditi ndërpritet.
   const release = once(async () => {
     try {
       await chrome?.kill();
+      await waitForExit(chrome?.process);
     } catch {
       /* Windows: EPERM gjatë pastrimit të profilit — injorohet */
     }
     await proxy.close();
     await new Promise((r) => setTimeout(r, 500));
     try {
-      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+      // Chrome mund ta mbajë profilin disa sekonda pas ndalimit (sidomos kur ndalet nga mbyllja e dritares).
+      removeSync(userDataDir, { retries: 12, retryDelayMs: 500 });
     } catch {
       /* profili mbetet në %TEMP% nëse Chrome ende e mban të kyçur; e fshin auditi i radhës pas 24 orësh */
     }
@@ -167,7 +175,7 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
     // Ndërprerja erdhi ndërsa Chrome po nisej: lirohet menjëherë, pa nisur Lighthouse.
     if (isAborting()) {
       await release();
-      throw new Error('Auditi u ndërpre');
+      throw new AbortedError();
     }
     const result = await withTimeout(
       lighthouse(url, {

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { removeSync } from './fsutil.js';
 
 /**
  * Burimet e përkohshme të një auditi (Chrome headless, profili i tij në %TEMP%, kloni i repo-s, procesi git,
@@ -18,13 +19,22 @@ export function registerCleanup(fn: Cleanup): () => void {
   return () => active.delete(fn);
 }
 
-/** Ekzekuton pastrimet aktive (secili me kufi kohe, gabimet injorohen). */
-export async function runCleanups(timeoutMs = 5000): Promise<void> {
+/** Ekzekuton pastrimet aktive (secili me kufi kohe, gabimet injorohen). taskkill i Chrome-it zgjat ndonjëherë mbi 5 s. */
+export async function runCleanups(timeoutMs = 15_000): Promise<void> {
   aborting = true;
-  const fns = [...active].reverse();
-  active.clear();
-  for (const fn of fns) {
+  // Deri sa të mos mbetet asgjë: edhe burimet e regjistruara gjatë ndërprerjes (p.sh. një provë e dytë e
+  // Lighthouse që po nisej) lirohen para se procesi të dalë.
+  while (active.size) {
+    const fn = [...active].pop()!;
+    active.delete(fn);
     await Promise.race([Promise.resolve().then(fn).catch(() => undefined), new Promise((r) => setTimeout(r, timeoutMs).unref())]);
+  }
+}
+
+/** Hidhet kur një burim i ri (Chrome, profil) do të nisej pasi ndërprerja ka filluar. */
+export class AbortedError extends Error {
+  constructor() {
+    super('Auditi u ndërpre');
   }
 }
 
@@ -66,7 +76,7 @@ export function sweepStaleTemp(dir = os.tmpdir(), now = Date.now()): string[] {
     try {
       const st = fs.lstatSync(full);
       if (!st.isDirectory() || now - st.mtimeMs < STALE_TEMP_MS) continue;
-      fs.rmSync(full, { recursive: true, force: true });
+      removeSync(full);
       removed.push(name);
     } catch {
       /* e kyçur ose pa leje: mbetet për herën tjetër */
@@ -109,10 +119,45 @@ export function sweepOrphanShots(outputDir: string, now = Date.now()): string[] 
   for (const n of candidates) {
     if (referenced.has(n)) continue;
     try {
-      fs.rmSync(path.join(visualDir, n), { recursive: true, force: true });
+      removeSync(path.join(visualDir, n));
       removed.push(n);
     } catch {
       /* mbetet për herën tjetër */
+    }
+  }
+  return removed;
+}
+
+/** Pret që një proces (p.sh. Chrome pas kill()) të dalë vërtet, që skedarët e tij të lirohen; maks. `ms`. */
+export function waitForExit(child: { exitCode: number | null; signalCode?: string | null; once(e: 'exit', f: () => void): unknown } | undefined, ms = 3000): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode) return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    child.once('exit', () => {
+      clearTimeout(t);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Dosja e përkohshme e programit të instaluar (%LOCALAPPDATA%\SEO Tool\tmp) përdoret vetëm nga auditet e tij.
+ * Kur programi hapet dhe s'ka instancë tjetër, gjithçka brenda saj është mbetje: fshihet.
+ */
+export function clearOwnTemp(dir: string): string[] {
+  const removed: string[] = [];
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return removed;
+  }
+  for (const n of names) {
+    try {
+      removeSync(path.join(dir, n), { retries: 2, retryDelayMs: 200 });
+      removed.push(n);
+    } catch {
+      /* i kyçur: mbetet për hapjen tjetër */
     }
   }
   return removed;

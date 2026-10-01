@@ -1,13 +1,18 @@
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { compareReports } from './compare.js';
 import { checkFolder, folderRequest, parseRepoForm, parseUrlForm, type AuditRequest } from './forms.js';
 import { JobLimitError, JobManager, type JobManagerOptions } from './jobs.js';
 import { STYLE } from './style.js';
 import { kindOf, listReports, lhrPath, readReport, screenshotPath } from './store.js';
-import { auditFormsView, folderConfirmView, jobsListView, jobView, type FormState } from './views-jobs.js';
+import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsForm, type AuditEnv, type FormState } from './views-jobs.js';
+import { findBrowser, type BrowserLookup } from '../core/browser.js';
+import { gitAvailable } from '../core/git.js';
+import { loadConfig } from '../core/config.js';
 import { comparePickerView, compareView, errorView, listView, sourceReportView, urlReportView, type Files, type Query } from './views.js';
 
 /**
@@ -37,6 +42,12 @@ export const SECURITY_HEADERS: Record<string, string> = {
 
 export interface DashboardOptions {
   outputDir: string;
+  /** Për teste: kërkimi i shfletuesit (parazgjedhje: config.json + Chrome/Edge i instaluar). */
+  findBrowser?: () => BrowserLookup;
+  /** Për teste: kontrolli i Git-it (parazgjedhje: `git --version`). */
+  gitAvailable?: () => boolean;
+  /** Për teste: hapja e dosjes së raporteve (parazgjedhje: Explorer). */
+  openFolder?: (dir: string) => void;
   /** Opsione të punëve (kufiri, komanda për teste, hoste lokale për fixtures). */
   jobs?: Omit<JobManagerOptions, 'outputDir'>;
 }
@@ -86,11 +97,30 @@ function readBody(req: http.IncomingMessage): Promise<string | undefined> {
 export function createDashboard(opts: DashboardOptions): Dashboard {
   const jobs = new JobManager({ ...opts.jobs, outputDir: opts.outputDir });
   const csrf = crypto.randomBytes(32).toString('base64url');
+  const instanceId = dashboardInstanceId(opts.outputDir);
+  const configPath = path.resolve('config.json');
+  // Kontrollohet në çdo hapje të faqes: nëse përdoruesi instalon Chrome/Edge, mjafton rifreskimi.
+  const auditEnv = (): AuditEnv => {
+    let configured: string | undefined;
+    try {
+      configured = loadConfig().lighthouse.chromePath;
+    } catch {
+      configured = undefined;
+    }
+    return { browser: opts.findBrowser ? opts.findBrowser() : findBrowser(configured), git: gitCheck(), outputDir: opts.outputDir, configPath };
+  };
+  // Git kontrollohet më së shumti një herë në 30 s (instalimi i tij kërkon gjithsesi rihapjen e programit).
+  let gitCache: { ok: boolean; at: number } | undefined;
+  const gitCheck = () => {
+    if (opts.gitAvailable) return opts.gitAvailable();
+    if (!gitCache || Date.now() - gitCache.at > 30_000) gitCache = { ok: gitAvailable(), at: Date.now() };
+    return gitCache.ok;
+  };
 
   const server = http.createServer(async (req, res) => {
     const send = (status: number, type: string, body: string | Buffer, extra: Record<string, string> = {}) => {
       if (res.headersSent) return;
-      res.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': type, ...extra });
+      res.writeHead(status, { ...SECURITY_HEADERS, 'X-SEO-Tool': instanceId, 'Content-Type': type, ...extra });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
     const page = (status: number, body: string) => send(status, 'text/html; charset=utf-8', body);
@@ -120,9 +150,9 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         lhrExists: (name) => !!lhrPath(opts.outputDir, name),
       };
 
-      if (p === '/') return page(200, listView(listReports(opts.outputDir)));
+      if (p === '/') return page(200, listView(listReports(opts.outputDir), openReportsForm(csrf, '/')));
       if (p === '/style.css') return send(200, 'text/css; charset=utf-8', STYLE);
-      if (p === '/audit') return page(200, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent));
+      if (p === '/audit') return page(200, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, {}, auditEnv()));
       if (p === '/jobs') return page(200, jobsListView(jobs.list(), jobs.maxConcurrent));
       if (p.startsWith('/jobs/')) {
         const job = jobs.get(p.slice('/jobs/'.length));
@@ -166,27 +196,33 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         const job = jobs.start(reqd.kind, reqd.target, reqd.args, reqd.options);
         return redirect(`/jobs/${job.id}`);
       } catch (e) {
-        if (e instanceof JobLimitError) return page(429, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { ...formState, errors: [e.message] }));
+        if (e instanceof JobLimitError) return page(429, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { ...formState, errors: [e.message] }, auditEnv()));
         throw e;
       }
     }
 
     function handlePost(p: string, form: Record<string, string>) {
+      if (p === '/open-reports') {
+        // Vetëm dosja e raporteve e këtij dashboard-i; asnjë shteg nga kërkesa.
+        fs.mkdirSync(opts.outputDir, { recursive: true });
+        (opts.openFolder ?? openFolderInExplorer)(opts.outputDir);
+        return redirect(form.back === '/audit' ? '/audit' : '/');
+      }
       if (p === '/audit/url' || p === '/audit/repo') {
         const kind = p === '/audit/url' ? 'url' : 'repo';
         const parsed = kind === 'url' ? parseUrlForm(form) : parseRepoForm(form);
-        if (!parsed.ok) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind, values: form, errors: parsed.errors }));
+        if (!parsed.ok) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind, values: form, errors: parsed.errors }, auditEnv()));
         return start(parsed.value, { kind, values: form });
       }
       if (p === '/audit/folder/check') {
         const check = checkFolder(form.path);
-        if (!check.ok) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind: 'folder', values: form, errors: check.errors }));
+        if (!check.ok) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind: 'folder', values: form, errors: check.errors }, auditEnv()));
         return page(200, folderConfirmView(csrf, check, form.path ?? ''));
       }
       if (p === '/audit/folder/start') {
         // Rivalidim: nisja pranon vetëm shtegun real të konfirmuar, të pandryshuar që nga kontrolli.
         const check = checkFolder(form.path);
-        if (!check.ok || check.realPath !== form.path) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind: 'folder', values: form, errors: check.ok ? ['Dosja ndryshoi që nga konfirmimi: kontrolloje përsëri.'] : check.errors }));
+        if (!check.ok || check.realPath !== form.path) return page(400, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { kind: 'folder', values: form, errors: check.ok ? ['Dosja ndryshoi që nga konfirmimi: kontrolloje përsëri.'] : check.errors }, auditEnv()));
         return start(folderRequest(check.realPath!), { kind: 'folder', values: form });
       }
       const m = p.match(/^\/jobs\/([0-9a-f-]{36})\/cancel$/);
@@ -201,6 +237,20 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
   // Mbyllja e dashboard-it ndal edhe auditet në punë (s'mbeten procese jetime).
   server.on('close', () => void jobs.cancelAll());
   return { server, jobs, csrf };
+}
+
+/**
+ * Identifikuesi në header-in X-SEO-Tool: nisësi i programit të instaluar e përdor që të rihapë një dashboard
+ * tashmë të hapur me të njëjtën dosje raportesh, në vend që të nisë një të dytë. Hash, jo shtegu.
+ */
+export function dashboardInstanceId(outputDir: string): string {
+  return `dashboard; out=${crypto.createHash('sha256').update(path.resolve(outputDir).toLowerCase()).digest('hex').slice(0, 16)}`;
+}
+
+/** Hap dosjen në menaxherin e skedarëve të sistemit (pa shell; shtegu kalon si argument). */
+function openFolderInExplorer(dir: string): void {
+  const [cmd, args] = process.platform === 'win32' ? ['explorer.exe', [dir]] : process.platform === 'darwin' ? ['open', [dir]] : ['xdg-open', [dir]];
+  spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: false }).on('error', () => {}).unref();
 }
 
 /** Pajtueshmëri: serveri pa qasje te punët. */

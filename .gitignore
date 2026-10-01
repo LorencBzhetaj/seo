@@ -13,3 +13,6 @@ lighthouse.*/
 .env.*
 !.env.example
 config.local.json
+
+# Instaluesi (ndërtohet me npm run installer)
+build/

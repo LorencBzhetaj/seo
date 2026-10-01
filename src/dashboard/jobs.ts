@@ -67,8 +67,8 @@ export class JobLimitError extends Error {}
 export const MAX_CONCURRENT_JOBS = 2;
 const MAX_EVENTS = 300;
 const MAX_FINISHED = 30;
-/** Motori zakonisht pastron për 1–3 s; pas këtij afati pema e proceseve ndalet me forcë. */
-export const CANCEL_GRACE_MS = 8000;
+/** Motori zakonisht pastron për 1–3 s (taskkill i Chrome-it ndonjëherë mbi 5 s); pas këtij afati pema e proceseve ndalet me forcë. */
+export const CANCEL_GRACE_MS = 20_000;
 
 /** CLI-ja e motorit: dist/cli.js pas build-it, ose src/cli.ts me tsx gjatë zhvillimit/testeve. */
 export function defaultCommand(): JobCommand {

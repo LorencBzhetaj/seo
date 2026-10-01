@@ -16,7 +16,8 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:lighthouse": "cross-env RUN_LIGHTHOUSE_TESTS=1 vitest run tests/cli.e2e.test.ts tests/visual.e2e.test.ts",
-    "dashboard": "tsx src/dashboard/cli.ts"
+    "dashboard": "tsx src/dashboard/cli.ts",
+    "installer": "node scripts/build-installer.mjs"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

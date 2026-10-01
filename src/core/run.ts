@@ -174,6 +174,7 @@ export async function executeAudit(input: string, config: AuditConfig, hooks: Ru
   // Identiteti vizual: renderim i kufizuar i faqeve përfaqësuese (vetëm kur faqja reale u mor)
   if (config.quality.enabled) {
     if (!config.quality.visual) ctx.visual = { status: 'skipped', reason: 'Renderimi vizual u çaktivizua (--no-visual)' };
+    else if (config.lighthouse.unavailableReason) ctx.visual = { status: 'skipped', reason: config.lighthouse.unavailableReason };
     else if (ctx.access.state !== 'ok') ctx.visual = { status: 'skipped', reason: `Faqja reale s'u mor (${ctx.access.summary})` };
     else if (!hooks.captureVisual) ctx.visual = { status: 'skipped', reason: 'Runner-i i renderimit mungon' };
     else {

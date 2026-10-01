@@ -1,11 +1,11 @@
 # Website Auditor — MVP-1 + MVP-2 + MVP-3 + cilësia
 
-CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1), me një crawl të kufizuar **faqet e tjera** të një siti (MVP-2), dhe **sinjalet e biznesit e të privatësisë** me zbulim të llojit të sitit e CMS-it (MVP-3). Jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1, MVP-2 dhe MVP-3 (§11). Mbetet CLI për përdorim personal: pa SaaS, llogari përdoruesish apo instalues.
+CLI lokal (Node.js + TypeScript) që auditon **faqen hyrëse** (MVP-1), me një crawl të kufizuar **faqet e tjera** të një siti (MVP-2), dhe **sinjalet e biznesit e të privatësisë** me zbulim të llojit të sitit e CMS-it (MVP-3). Jep: çfarë nuk shkon → provën konkrete → sa rëndësi ka → si rregullohet. Arkitektura e plotë: [docs/website-checker-architecture.md](docs/website-checker-architecture.md). Ky repo implementon MVP-1, MVP-2 dhe MVP-3 (§11). Mbetet tool për përdorim personal: pa SaaS dhe pa llogari përdoruesish. Për Windows ka një paketë që s'kërkon Node.js (shih [Instalimi në Windows](#instalimi-në-windows-pa-nodejs)).
 
 ## Kërkesat
 
 - Node.js ≥ 22.19 (testuar me 24.11)
-- Google Chrome ose Chromium i instaluar (për Lighthouse). Pa Chrome, auditi vazhdon, por Performance/Accessibility/Best Practices dalin `skipped` dhe Health Score `PARTIAL`.
+- Google Chrome, Chromium ose Microsoft Edge i instaluar (për Lighthouse dhe pamjen vizuale). Kërkohet në këtë radhë: `lighthouse.chromePath` / `--chrome-path`, `CHROME_PATH`, Chrome/Chromium i instaluar, Edge. Pa asnjë, auditi vazhdon, por Performance/Accessibility/Best Practices dalin `skipped` me arsye dhe Health Score `PARTIAL`. Auditi i dosjes/repo-s s'ka nevojë për shfletues. `SEO_TOOL_BROWSER=none` e çaktivizon shfletuesin me qëllim (p.sh. për ta provuar këtë rast).
 
 ## Instalimi
 
@@ -14,6 +14,56 @@ npm install
 ```
 
 Opsionale: kopjo `config.example.json` si `config.json` për të ndryshuar kufijtë (timeout, madhësia, vonesa mes kërkesave). MVP-1 s'kërkon asnjë API key; nëse më vonë shtohen sekrete, ato mbahen në `.env` (i përjashtuar nga Git, shih `.env.example`).
+
+## Instalimi në Windows (pa Node.js)
+
+Paketa `SEO-Tool-<version>-windows-x64.zip` përmban Node.js-in (i nënshkruar nga OpenJS) dhe programin. S'ka nevojë për PowerShell, Node.js të instaluar veçmas apo të drejta administratori.
+
+1. **Kontrollo burimin.** ZIP-i duhet të vijë nga vendi ku e ruan vetë. Krahaso SHA-256 me vlerën te `SEO-Tool-<version>-windows-x64.zip.sha256` (në cmd):
+   `certutil -hashfile "SEO-Tool-<version>-windows-x64.zip" SHA256`
+2. **Zhbllokoje manualisht** nëse u shkarkua ose u kopjua nga interneti: kliko djathtas mbi ZIP > **Properties** > shëno **Unblock** > OK, *para* nxjerrjes. Programi s'e heq vetë shënimin "nga interneti". Nëse skedarët e nxjerrë e kanë ende, `Instalo.cmd` ndalon pa ndryshuar asgjë dhe shpjegon hapat. Me Smart App Control, Windows i bllokon gjithsesi.
+3. **Nxirre ZIP-in** (**Extract All**) në dosjen ku do ta mbash programin. Kjo dosje është dosja e instalimit; mund të ketë hapësira dhe ë/ç.
+4. **Hap `Instalo.cmd`** dhe përgjigju pyetjeve:
+   - nëse versioni i mëparshëm është në një dosje tjetër, pyet a të hiqet [P/j];
+   - shkurtore edhe në Desktop? [p/J];
+   - të hapet tani? [P/j].
+
+   Pastaj bën këto:
+   - krijon shkurtoren **SEO Tool** në Start Menu me Windows Script Host dhe e verifikon duke e lexuar përsëri;
+   - e regjistron programin te Cilësimet > Aplikacionet (HKCU, pa administrator).
+
+   Nëse Windows Script Host është i çaktivizuar ose shkurtorja s'del e saktë, instalimi raportohet si **i papërfunduar**: s'krijohet shkurtore dhe s'regjistrohet asgjë. Mesazhi tregon si hapet programi pa shkurtore (`Hap SEO Tool.cmd`).
+
+**Përdorimi:** Start Menu > SEO Tool (ose `Hap SEO Tool.cmd`). Hapet dritarja e programit dhe dashboard-i në shfletues, vetëm në `127.0.0.1`. Në Windows 11, dritarja shpesh hapet si tab në Windows Terminal.
+- Mbyllja e dritares (ose Ctrl+C / Ctrl+Break) anulon auditet në punë; ato pastrojnë vetë.
+- Një hapje e dytë rihap të njëjtin dashboard, nuk nis një të dytë.
+- Butoni **Hap dosjen e raporteve** (te lista dhe te "Nis audit") hap `output\` në Explorer.
+- CLI-ja: `seo-audit.cmd` në dosjen e programit.
+
+**Varësi që s'paketohen** (që paketa të mbetet e vogël):
+- **Chrome ose Edge:** për Lighthouse dhe pamjen vizuale. Pa to, dashboard-i jep udhëzim dhe auditi i URL-së vazhdon pa to.
+- **Git for Windows:** për auditin e repo-ve. Pa të, dashboard-i jep udhëzim dhe e çaktivizon butonin e repo-s. Pas instalimit të Git-it, programi duhet rihapur.
+
+**Të dhënat** janë jashtë dosjes së instalimit, te `%LOCALAPPDATA%\SEO Tool`:
+- `output\`: raportet, LHR dhe screenshot-et;
+- `config.json` (opsional, p.sh. `{"lighthouse": {"chromePath": "C:\\…\\chrome.exe"}}`);
+- `tmp\`: skedarët e përkohshëm të auditeve (profilet e Chrome, klonet). Çdo hapje e programit e zbraz.
+
+**Përditësimi:**
+- Nxirre versionin e ri **mbi të njëjtën dosje** (zëvendëso skedarët) ose në një dosje të re, pastaj hap `Instalo.cmd`.
+- Mbi të njëjtën dosje: skedarët e versionit të vjetër që s'janë më në paketë hiqen vetëm brenda `runtime\` dhe `app\`, sipas `app\manifest.txt`.
+- Në dosje të re: programi i vjetër hiqet pas konfirmimit.
+- Raportet, konfigurimi dhe skedarët e tu (jashtë `runtime\` dhe `app\`) s'preken. Nëse programi është i hapur, përditësimi refuzohet.
+
+**Çinstalimi:** Cilësimet > Aplikacionet > SEO Tool. Heq shkurtoret, regjistrimin dhe vetëm skedarët e programit.
+- Raportet dhe konfigurimi **ruhen si parazgjedhje**: fshihen vetëm nëse përgjigjesh "p" te pyetja [p/J].
+- Nëse programi është i hapur, çinstalimi refuzohet.
+- Pa pyetje: `uninstall --yes` (i ruan të dhënat) ose `--yes --delete-data`.
+
+**Ndërtimi i paketës** (në Windows, nga ky repo): `npm run installer` → `build/SEO-Tool-<version>-windows-x64.zip`.
+- Përdor Node-in që e ekzekuton (versioni i testuar) dhe vetëm varësitë e prodhimit.
+- Heq source maps, `.d.ts` dhe dokumentimin e paketave, si dhe Sentry/OpenTelemetry. Lighthouse i ngarkon këto vetëm kur raportimi i gabimeve drejt Sentry është aktiv, gjë që ky tool s'e bën kurrë.
+- Lokalizimet e Lighthouse mbeten: `locales.js` i importon të gjitha (pa to Lighthouse dështon).
 
 ## Përdorimi
 
@@ -121,18 +171,20 @@ Një UI desktop do të thërriste `executeAudit(...)`. Hook-et `onStatus`/`onSte
 
 Në një aplikacion të instaluar, këto duhet të kalojnë te dosja e të dhënave të përdoruesit, p.sh. `%APPDATA%\WebsiteAuditor\`. Po ashtu, `package.json` lexohet relativisht ndaj kodit për versionin e tool-it.
 
-### Çfarë duhet paketuar ose instaluar veçmas për një instalues Windows (ende s'është ndërtuar)
+### Paketimi për Windows (vendimet)
 
-| Komponenti | Pse duhet | Opsionet |
+| Komponenti | Vendimi | Arsyeja |
 |---|---|---|
-| **Node.js runtime** (≥ 22.19) | Motori ekzekutohet në Node | Të përfshihet në aplikacion (p.sh. Electron/Tauri sidecar ose Node SEA) që përdoruesi të mos e instalojë vetë |
-| **Chrome / Chromium** | Lighthouse ka nevojë për një browser Chromium. Pa të, Performance/Accessibility/Best Practices dalin `skipped` | a) të përdoret Chrome ose Edge i instaluar (gjendet automatikisht, ose me `lighthouse.chromePath`), b) të shkarkohet Chrome for Testing gjatë instalimit, c) të përfshihet Chromium (~150+ MB, kërkon përditësime sigurie) |
-| `lighthouse` + `chrome-launcher` (npm) | Matjet lab dhe nisja e Chrome | Futen në bundle me `node_modules` e prodhimit. Lighthouse ka asete (locale, axe-core) që s'duhen hequr gjatë bundling-ut |
-| `cheerio` (npm) | Parsing i HTML | JS i pastër, pa kod nativ |
-| Dosje e shkrueshme për raportet, config dhe profilin e përkohshëm të Chrome | Raportet JSON, `config.json`, `%TEMP%\website-auditor-chrome-*` | Dosja e të dhënave të përdoruesit, jo `Program Files` |
-| Rrjeti / firewall | Guard proxy dëgjon vetëm në `127.0.0.1` në një port të rastësishëm, që Chrome të kalojë nëpër të | Mund të shfaqet dialog i Windows Firewall. Duhet dokumentuar në instalues |
+| **Node.js runtime** | `runtime\node.exe` brenda paketës (85.7 MB) | Përdoruesi s'instalon Node. Node SEA u përjashtua: ndryshon binarin e nënshkruar, dhe Smart App Control e bllokon |
+| **Instaluesi** | ZIP + `Instalo.cmd` (JS mbi Node-in e paketuar) | Një `Setup.exe` i panënshkruar bllokohet nga Smart App Control (u provua). Nënshkrimi kërkon certifikatë code-signing |
+| **Shkurtorja** | `cscript` + WScript.Shell (API zyrtare), e verifikuar duke e lexuar përsëri. Nëse WSH mungon, instalimi del i papërfunduar dhe jepet mënyra pa shkurtore | Pa PowerShell, pa ekzekutues të panënshkruar dhe pa shkurtore të dëmtuar |
+| **Git** | **S'paketohet.** Pa të, dashboard-i jep udhëzim për auditin e repo-ve | Paketa mbetet e vogël |
+| **Chrome / Chromium** | **S'paketohet.** Përdoret Chrome i instaluar ose Edge (pjesë e Windows 10/11; u provua me Lighthouse dhe renderimin) | Chrome for Testing: 196 MB zip; chrome-headless-shell: 115 MB zip. Kjo do ta trefishonte paketën dhe do të kërkonte përditësime sigurie |
+| `lighthouse`, `puppeteer-core`, `chrome-launcher`, `cheerio` | `node_modules` e prodhimit (136 paketa), të pastruara | Pa kod nativ |
+| Të dhënat | `%LOCALAPPDATA%\SEO Tool` (output, config.json, tmp) | E shkrueshme nga përdoruesi, jashtë dosjes së instalimit |
+| Rrjeti | Dashboard-i dhe guard proxy dëgjojnë vetëm në `127.0.0.1` | Pa porta të hapura në rrjet |
 
-Varësitë vetëm për zhvillim (`typescript`, `tsx`, `vitest`, `cross-env`, `@types/node`) nuk hyjnë në instalues.
+Varësitë vetëm për zhvillim (`typescript`, `tsx`, `vitest`, `cross-env`, `@types/node`) nuk hyjnë në paketë.
 
 ## MVP-2: crawl i kufizuar dhe gjetje për shumë faqe
 
@@ -326,7 +378,7 @@ Faqja **Nis audit** (`/audit`) ka tre formularë, me vlerat parazgjedhje të sh�
   - crawl-in si "faqja N nga maks. 25" (totali i sitit s'dihet paraprakisht);
   - hapat;
   - gabimin me kodin e daljes, ose linkun te raporti.
-- **Anulimi** mbyll kanalin stdin të procesit; motori ndalet vetë (shih rregullin më poshtë). Nëse s'del brenda 8 s, gjithë pema e proceseve ndalet me forcë, përfshirë Chrome-in. Puna del **"anuluar", pa raport**. Raporti shkruhet në mënyrë atomike (skedar i përkohshëm + rename), ndaj s'mbetet kurrë një raport i cunguar. Nëse anulimi vjen pasi raporti u shkrua, puna del "përfunduar" me shënim.
+- **Anulimi** mbyll kanalin stdin të procesit; motori ndalet vetë (shih rregullin më poshtë). Nëse s'del brenda 20 s, gjithë pema e proceseve ndalet me forcë, përfshirë Chrome-in. Puna del **"anuluar", pa raport**. Raporti shkruhet në mënyrë atomike (skedar i përkohshëm + rename), ndaj s'mbetet kurrë një raport i cunguar. Nëse anulimi vjen pasi raporti u shkrua, puna del "përfunduar" me shënim.
 - **Kufiri:** 2 audite njëkohësisht, dhe jo dy herë i njëjti objekt. Kërkesa e tretë refuzohet derisa të lirohet një vend.
 - Lista e punëve mbahet vetëm sa është hapur dashboard-i; raportet e përfunduara mbeten te `output/` dhe shfaqen sërish kur dashboard-i rihapet.
 
@@ -337,7 +389,7 @@ Faqja **Nis audit** (`/audit`) ka tre formularë, me vlerat parazgjedhje të sh�
   - fshin screenshot-et e pjesshme të atij ekzekutimi (`output/visual/<ekzekutim>/`).
 - Screenshot-et i përkasin raportit: mbahen vetëm kur raporti shkruhet.
 - Proceset e auditit nisen jashtë "job object"-it të dashboard-it. Kështu, edhe kur dashboard-i vritet, motori e kupton mbylljen nga stdin-i dhe pastron vetë.
-- Rasti i vetëm që lë mbetje: vetë procesi i motorit vritet me forcë (pas 8 s anulimi pa përgjigje, ose nga Task Manager). Mbetjet më të vjetra se 24 orë i fshin auditi i radhës:
+- Rasti i vetëm që lë mbetje: vetë procesi i motorit vritet me forcë (pas 20 s anulimi pa përgjigje, ose nga Task Manager). Mbetjet më të vjetra se 24 orë i fshin auditi i radhës:
   - dosjet `website-auditor-*` te `%TEMP%`;
   - dosjet `output/visual/*` që s'i referon asnjë raport.
   Dosjet me raport s'preken kurrë.
@@ -380,6 +432,8 @@ src/
   intelligence/              # priority (§4), similarity (shingle/Jaccard)
   scoring/scorer.ts          # category → health → risk modifiers (§1)
   report/                    # json, site (seksioni i crawl-it), business (MVP-3), terminal
-  dashboard/                 # dashboard lokal: store, model, compare, views (HTML pa JS), server (127.0.0.1)
+  dashboard/                 # dashboard lokal: store, model, compare, views (HTML pa JS), server (127.0.0.1), jobs, forms
+  app/                       # programi i instaluar: launch (nisësi), setup (instalim/çinstalim, shkurtore e verifikuar), instance
+scripts/                     # build-installer (paketa ZIP për Windows), make-icon
 tests/                       # vitest + fixtures (HTML, LHR reale), fixture-site.ts (site lokal i kontrolluar)
 ```

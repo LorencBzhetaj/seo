@@ -47,7 +47,7 @@ export function layout(title: string, body: SafeHtml, refreshSeconds?: number): 
 
 // ---------------------------------------------------------------- Lista
 
-export function listView(list: ListResult): string {
+export function listView(list: ListResult, openReports?: SafeHtml): string {
   const prevOf = (r: ReportSummary) => list.reports.find((x) => x !== r && x.siteKey === r.siteKey && (x.date ?? '') < (r.date ?? ''));
   const rows = list.reports.map((r) => {
     const prev = prevOf(r);
@@ -69,7 +69,7 @@ export function listView(list: ListResult): string {
     : '';
   return layout(
     'Raportet',
-    html`<h1>Raportet</h1><p class="sub">${list.reports.length} raporte nga dosja e raporteve.</p>
+    html`<h1>Raportet</h1><div class="row-actions"><p class="sub">${list.reports.length} raporte nga dosja e raporteve.</p>${openReports ?? ''}</div>
 <div class="warnbox"><strong>Auditi</strong> tregon nëse modulet e auditit u kryen: <em>i përfunduar</em>, ose <em>i pjesshëm</em> kur disa module u anashkaluan (p.sh. Lighthouse u bllokua). <strong>Crawl-i</strong> tregon sa nga faqet e zbuluara u kontrolluan brenda kufijve (p.sh. 25 faqe): një audit i përfunduar mund të ketë <em>crawl të pjesshëm</em>. Health Score vlen vetëm për faqen hyrëse.</div>
 <div class="panel"><table><thead><tr><th>Data</th><th>Objekti</th><th>Lloji</th><th>Auditi</th><th class="num">Health</th><th>Crawl-i (faqe të kontrolluara)</th><th class="num">Issue</th><th>Schema</th><th></th></tr></thead>
 <tbody>${rows.length ? rows : html`<tr><td colspan="9" class="note">S'ka raporte në dosjen e raporteve.</td></tr>`}</tbody></table></div>${invalid}`,

@@ -1,5 +1,6 @@
 import { MAX_DEPTH, MAX_PAGES, URL_DEFAULTS, type FolderCheck } from './forms.js';
 import { externalLink, html, truncate, type SafeHtml } from './html.js';
+import type { BrowserLookup } from '../core/browser.js';
 import type { Job, JobState } from './jobs.js';
 import { layout } from './views.js';
 
@@ -39,15 +40,45 @@ function checkbox(name: string, label: string, checked: boolean, note?: string):
   return html`<label class="check"><input type="checkbox" name="${name}" ${checked ? html`checked` : ''}> ${label}${note ? html` <span class="note">${note}</span>` : ''}</label>`;
 }
 
-export function auditFormsView(csrf: string, running: Job[], limit: number, state: FormState = {}): string {
+/** Mjedisi i kësaj nisjeje: shfletuesi për Lighthouse dhe ku ruhen raportet/konfigurimi. */
+export interface AuditEnv {
+  browser: BrowserLookup;
+  /** Git në PATH (për auditin e repo-ve). */
+  git: boolean;
+  outputDir: string;
+  configPath: string;
+}
+
+function browserBox(env: AuditEnv): SafeHtml {
+  const b = env.browser.browser;
+  if (b) {
+    return html`<div class="note">Lighthouse dhe pamja vizuale përdorin <b>${b.name}</b> (<span class="code">${b.path}</span>)${b.source === 'edge' ? " — Chrome s'u gjet, u përdor Edge." : '.'}</div>`;
+  }
+  return html`<div class="warnbox" id="pa-shfletues"><b>${env.browser.disabled ? 'Shfletuesi është çaktivizuar (SEO_TOOL_BROWSER=none).' : "S'u gjet Chrome ose Edge në këtë kompjuter."}</b>${env.browser.invalidConfigured ? html` Shtegu në config.json s'ekziston: <span class="code">${env.browser.invalidConfigured}</span>.` : ''}
+<ul>
+<li>Auditi i URL-së vazhdon pa Lighthouse dhe pa pamjen vizuale. Performance, Accessibility dhe Best Practices dalin "skipped", ndaj Health Score s'gjenerohet. Kontrollet e tjera kryhen normalisht.</li>
+<li>Auditet e dosjes dhe të repo-s s'kanë nevojë për shfletues.</li>
+<li>Për Lighthouse: instalo Google Chrome ose Microsoft Edge, pastaj rifresko këtë faqe.</li>
+<li>Nëse shfletuesi është në një vend tjetër, shkruaje te <span class="code">${env.configPath}</span>: <span class="code">{"lighthouse": {"chromePath": "C:\\\\Rruga\\\\chrome.exe"}}</span> (në JSON, çdo <span class="code">\\</span> shkruhet dy herë).</li>
+</ul></div>`;
+}
+
+/** Butoni "Hap dosjen e raporteve" (POST me token; serveri hap vetëm dosjen e vet të raporteve). */
+export function openReportsForm(csrf: string, back: '/' | '/audit'): SafeHtml {
+  return html`<form method="post" action="/open-reports" class="inline">${token(csrf)}<input type="hidden" name="back" value="${back}"><button type="submit" class="secondary">Hap dosjen e raporteve</button></form>`;
+}
+
+export function auditFormsView(csrf: string, running: Job[], limit: number, state: FormState = {}, env?: AuditEnv): string {
   const v = state.values ?? {};
   const urlChecked = (k: keyof typeof URL_DEFAULTS) => (state.kind === 'url' ? v[k] === 'on' : (URL_DEFAULTS[k] as boolean));
   const full = running.length >= limit;
   return layout(
     'Nis audit',
     html`<h1>Nis audit</h1>
-<p class="sub">Auditet ekzekutohen nga i njëjti motor si CLI-ja (<span class="code">npm run audit</span>), në këtë kompjuter. Raporti ruhet te dosja e raporteve dhe del te lista.</p>
+<p class="sub">Auditet ekzekutohen nga i njëjti motor si CLI-ja (<span class="code">npm run audit</span> / <span class="code">seo-audit.cmd</span>), në këtë kompjuter. Raporti ruhet te dosja e raporteve dhe del te lista.</p>
 <div class="${full ? 'warnbox' : 'note'}">Në punë: ${running.length}/${limit} audite njëkohësisht.${full ? ' Kufiri u arrit: prit ose anulo një punë.' : ''} ${running.length ? html`<a href="/jobs">Shiko punët</a>` : ''}</div>
+${env ? browserBox(env) : ''}
+${env ? html`<div class="row-actions"><span class="note">Raportet ruhen te <span class="code">${env.outputDir}</span>.</span> ${openReportsForm(csrf, '/audit')}</div>` : ''}
 <div class="grid forms">
 <section class="panel" id="url"><h2>Audit URL</h2>
 ${state.kind === 'url' ? errorsBox(state.errors) : ''}
@@ -56,10 +87,10 @@ ${state.kind === 'url' ? errorsBox(state.errors) : ''}
 <div class="row"><label class="field">Faqe maksimale (crawl)<input type="number" name="maxPages" min="1" max="${MAX_PAGES}" value="${state.kind === 'url' ? v.maxPages ?? URL_DEFAULTS.maxPages : URL_DEFAULTS.maxPages}"></label>
 <label class="field">Thellësia e linkeve<input type="number" name="maxDepth" min="0" max="${MAX_DEPTH}" value="${state.kind === 'url' ? v.maxDepth ?? URL_DEFAULTS.maxDepth : URL_DEFAULTS.maxDepth}"></label></div>
 ${checkbox('crawl', 'Crawl i kufizuar i sitit', urlChecked('crawl'), `(parazgjedhje: po; maks. ${MAX_PAGES} faqe)`)}
-${checkbox('lighthouse', 'Lighthouse mobile', urlChecked('lighthouse'), '(parazgjedhje: po; kërkon Chrome)')}
+${checkbox('lighthouse', 'Lighthouse mobile', urlChecked('lighthouse'), '(parazgjedhje: po; kërkon Chrome ose Edge)')}
 ${checkbox('business', 'Biznes & privatësi', urlChecked('business'), '(parazgjedhje: po)')}
 ${checkbox('quality', 'Cilësia e përmbajtjes', urlChecked('quality'), '(parazgjedhje: po; sinjale, jashtë Health)')}
-${checkbox('visual', 'Pamja desktop + mobile', urlChecked('visual'), '(parazgjedhje: po; kërkon Lighthouse/Chrome)')}
+${checkbox('visual', 'Pamja desktop + mobile', urlChecked('visual'), '(parazgjedhje: po; kërkon Chrome ose Edge)')}
 ${checkbox('saveLhr', 'Ruaj LHR-në e plotë', urlChecked('saveLhr'), '(parazgjedhje: jo; mund të përmbajë të dhëna të faqes)')}
 ${checkbox('ignoreRobots', 'Anashkalo robots.txt', urlChecked('ignoreRobots'), '(parazgjedhje: jo; vetëm për site që i kontrollon vetë)')}
 <p class="note">Kufijtë e rrjetit mbeten ata të motorit: robots.txt, ≥ 500 ms mes kërkesave për host, pa login/cart/checkout, pa dërguar formularë.</p>
@@ -74,10 +105,11 @@ ${state.kind === 'folder' ? errorsBox(state.errors) : ''}
 
 <section class="panel" id="repo"><h2>Repo publike</h2>
 ${state.kind === 'repo' ? errorsBox(state.errors) : ''}
+${env && !env.git ? html`<div class="warnbox" id="pa-git"><b>S'u gjet Git në këtë kompjuter.</b> Auditi i repo-ve ka nevojë për Git (klon i cekët), që s'paketohet me programin. Instalo Git for Windows (https://git-scm.com/download/win), pastaj mbyll dhe rihap SEO Tool. Auditet e URL-së dhe të dosjeve s'kanë nevojë për Git.</div>` : ''}
 <form method="post" action="/audit/repo">${token(csrf)}
 <label class="field">URL e repo-s (https)<input type="text" name="repo" value="${state.kind === 'repo' ? v.repo ?? '' : ''}" placeholder="https://github.com/emri/repo" required maxlength="500"></label>
 <p class="note">Klon i cekët i përkohshëm me kufijtë ekzistues (madhësia, koha), pa skripte, hooks, LFS, submodule apo kredenciale; fshihet pas auditit. Repo private s'mbështeten.</p>
-<button type="submit" ${full ? html`disabled` : ''}>Nis auditin e repo-s</button></form></section>
+<button type="submit" ${full || (env && !env.git) ? html`disabled` : ''}>Nis auditin e repo-s</button></form></section>
 </div>`,
   );
 }

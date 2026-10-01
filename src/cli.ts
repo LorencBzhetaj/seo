@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import fs from 'node:fs';
+import { findBrowser, noBrowserReason } from './core/browser.js';
 import { isAborting, registerCleanup, runCleanups, sweepOrphanShots, sweepStaleTemp } from './core/cleanup.js';
 import { loadConfig, MAX_PAGES_HARD_LIMIT } from './core/config.js';
 import { RobotsBlockedError } from './core/context.js';
@@ -14,6 +15,7 @@ import { RepoError } from './source/repo.js';
 import { buildSourceReport, renderSourceTerminal, writeSourceReport } from './source/report.js';
 import { executeSourceAudit } from './source/run.js';
 import { captureVisual } from './visual/capture.js';
+import { removeSync } from './core/fsutil.js';
 
 const HELP = `Përdorimi: website-audit <url> [opsione]
           website-audit --folder <dosje> [--out <dir>] [--json]
@@ -237,6 +239,18 @@ async function main(): Promise<number> {
   // Screenshot-e pa raport (nga një ndalim i detyruar) më të vjetra se 24 orë.
   sweepOrphanShots(path.resolve(config.outputDir));
 
+  // Shfletuesi për Lighthouse/renderimin: Chrome i instaluar ose Edge; pa to, vazhdojnë kontrollet e tjera.
+  if (config.lighthouse.enabled || config.quality.visual) {
+    const found = findBrowser(config.lighthouse.chromePath);
+    if (found.browser) {
+      config.lighthouse.chromePath = found.browser.path;
+      p.log(`• Shfletuesi: ${found.browser.name} (${found.browser.path})`);
+    } else {
+      config.lighthouse.unavailableReason = noBrowserReason(found);
+      p.log(`• ${config.lighthouse.unavailableReason}`);
+    }
+  }
+
   const statusText: Partial<Record<RunStatus, string>> = {
     crawling: 'mbledhje të dhënash (faqja hyrëse, pastaj crawl i kufizuar)…',
     auditing: 'auditim…',
@@ -255,7 +269,7 @@ async function main(): Promise<number> {
         const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
         const label = `${host}-${stamp}`;
         const dir = path.join(path.resolve(cfg.outputDir), 'visual', label);
-        const remove = () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+        const remove = () => removeSync(dir, { retries: 3, retryDelayMs: 200 });
         shots = { unregister: registerCleanup(remove), remove };
         return captureVisual(targets, cfg, path.resolve(cfg.outputDir), label);
       },

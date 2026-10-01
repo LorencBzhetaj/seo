@@ -17,6 +17,8 @@ export interface AuditConfig {
     formFactor: 'mobile';
     maxWaitForLoad: number;
     chromePath?: string;
+    /** I brendshëm (s'lexohet nga config.json): pse s'mund të ekzekutohet Lighthouse, p.sh. s'ka shfletues. */
+    unavailableReason?: string;
     /** Ruaj LHR-në e plotë lokalisht pranë raportit (--save-lhr). Joaktive si parazgjedhje. */
     saveLhr: boolean;
   };

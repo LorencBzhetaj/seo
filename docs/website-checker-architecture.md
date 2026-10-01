@@ -623,7 +623,7 @@ Sinjale, **jo provë autorësie**:
   - lista e punëve mbahet vetëm në memorie (sa është hapur dashboard-i).
 - **Nisja e auditeve** (në pritje të shqyrtimit):
   - `jobs` e ekzekuton CLI-në ekzistuese si proces (`--progress-json`: ngjarjet status/hap/crawl/raport/gabim që motori raporton realisht), pa implementim të dytë.
-  - Anulimi mbyll stdin-in (`--exit-with-stdin`). Pas 8 s pa dalje, pema e proceseve ndalet me forcë. Raportet shkruhen në mënyrë atomike.
+  - Anulimi mbyll stdin-in (`--exit-with-stdin`). Pas 20 s pa dalje, pema e proceseve ndalet me forcë. Raportet shkruhen në mënyrë atomike.
   - Ndërprerja (`src/core/cleanup.ts`): çdo burim i përkohshëm regjistrohet sa është gjallë dhe lirohet kur auditi ndërpritet (anulim, SIGINT/SIGHUP/SIGBREAK, stdin i mbyllur, EPIPE):
     - Chrome + profili;
     - kloni + `git`;
@@ -636,6 +636,17 @@ Sinjale, **jo provë autorësie**:
   - Kufiri: 2 audite njëkohësisht.
   - `forms` validon URL-në, repo-n dhe dosjen (shteg real + konfirmim; pa rrjet/rrënjë/sistem).
   - POST-et mbrohen me Origin/Sec-Fetch-Site + token CSRF.
+
+- **Paketa për Windows** (në pritje të shqyrtimit; `npm run installer`):
+  - ZIP me Node-in e nënshkruar, programin dhe `Instalo.cmd`. Nuk ka `Setup.exe`, sepse Smart App Control bllokon ekzekutuesit e panënshkruar.
+  - Instalimi është për përdoruesin aktual: shkurtore në Start Menu (përmes `cscript`, e verifikuar) dhe regjistrim HKCU për çinstalim. Pa WSH, instalimi del i papërfunduar dhe s'ndryshon asgjë.
+  - Shënimi "nga interneti" s'hiqet nga programi: `Instalo.cmd` ndalon dhe udhëzon për kontrollin e burimit (SHA-256) dhe Unblock.
+  - Përditësimi mbi të njëjtën dosje heq skedarët e vjetër vetëm brenda `runtime\` dhe `app\`, sipas `app\manifest.txt`.
+  - Fshirjet bëhen me `removeSync` (`src/core/fsutil.ts`), jo me `fs.rmSync`: në Node 24.11 në Windows, `fs.rmSync` s'bën asgjë (pa gabim) për shtigje me ë/ç (u provua). Kjo prek profilet e Chrome, tmp\, përditësimin dhe çinstalimin te përdoruesit me emra jo-ASCII.
+  - Git dhe Chrome/Edge s'paketohen; kur mungojnë, dashboard-i jep udhëzim. Butoni "Hap dosjen e raporteve" hap vetëm dosjen e raporteve.
+  - Të dhënat janë te `%LOCALAPPDATA%\SEO Tool` (output, config.json, tmp). Nisësi `src/app/launch.ts` vendos TEMP/TMP te `tmp\` dhe e zbraz në çdo hapje.
+  - Shfletuesi: Chrome i instaluar → Edge (`src/core/browser.ts`). Pa shfletues, Lighthouse dhe pamja vizuale dalin "skipped" me arsye, dhe dashboard-i jep udhëzim.
+  - Çinstalimi (`src/app/setup.ts`) fshin vetëm skedarët e programit; raportet vetëm me zgjedhje të qartë.
 
 **MVP-4 — AI & Visual**
 AI/LLM Discoverability + Visual UX Audit (screenshot 3 breakpoint + Design Originality via Claude vision — i vetmi modul me kosto).
