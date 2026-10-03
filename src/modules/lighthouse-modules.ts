@@ -1,6 +1,7 @@
 import type { AuditContext } from '../core/context.js';
 import type { AuditResult, CategoryKey, Evidence, IssueDraft, Severity } from '../core/schemas.js';
 import type { LhAudit, LighthouseData } from '../lighthouse/run-lighthouse.js';
+import type { SeriesKey } from '../lighthouse/series.js';
 import { ModuleBuilder } from './helpers.js';
 
 // Pragjet "Good/Needs improvement/Poor" të Core Web Vitals (web.dev).
@@ -71,6 +72,18 @@ function auditEvidence(audit: LhAudit, url: string, max = 3): Evidence[] {
   if (total > max) ev.push({ type: 'metric', url, detected: `… dhe ${total - max} elemente të tjera (shih Lighthouse "${audit.id}")` });
   if (ev.length === 0) ev.push({ type: 'metric', url, detected: `${audit.title}${audit.displayValue ? ` — ${audit.displayValue}` : ''}` });
   return ev;
+}
+
+/**
+ * Faza 4: provë e etiketuar për burimin e vlerës kur ka seri matjesh. Vlera e issue-t vjen nga matja
+ * përfaqësuese; intervali i serisë jepet veç, si informacion, pa u përzier me vlerën.
+ */
+function seriesEvidence(lh: LighthouseData, url: string, key: SeriesKey, fmt: (v: number) => string): Evidence[] {
+  const s = lh.series;
+  if (!s || s.planned < 2) return [];
+  const st = s.stats[key];
+  const range = st.n ? `mediana ${fmt(st.median!)}, min–max ${fmt(st.min!)}–${fmt(st.max!)} (${st.n} matje të vlefshme)` : "pa vlera të vlefshme";
+  return [{ type: "metric", url, detected: `Burimi i vlerës: matja përfaqësuese #${s.representativeRun} nga ${s.planned} të planifikuara. Seria (informative, s'hyn në vlerë): ${range}` }];
 }
 
 function unavailable(ctx: AuditContext): string | undefined {
@@ -229,7 +242,7 @@ export function runPerformance(ctx: AuditContext): AuditResult {
         fix: simulated
           ? `Vlera ${(lcp / 1000).toFixed(1)}s është vlerësim i Lighthouse për rrjet të ngadaltë mobile (Slow 4G, CPU 4x) mbi ngarkimin e regjistruar; ${breakdownMatches ? 'ndarja në evidence i përket ngarkimit të vëzhguar pa throttling dhe tregon vetëm ku shkoi koha atje, jo shkakun e vlerës së simuluar' : 'Lighthouse s\'jep ndarje për vlerën e simuluar'}. Hapi i parë: verifiko me DevTools → Performance (Slow 4G + CPU 4x) ose me disa ekzekutime, pastaj optimizo elementin LCP (madhësia/formati, fetchpriority="high", pa lazy-load) dhe burimet që bllokojnë render-in.`
           : 'Optimizo fazën më të gjatë në ndarjen e LCP (evidence): TTFB → cache/server; load delay/duration → zbulim i hershëm dhe madhësi e burimit; render delay → CSS/JS bllokues.',
-        evidence,
+        evidence: [...evidence, ...seriesEvidence(lh, url, 'lcpMs', (v) => `${(v / 1000).toFixed(1)} s`)],
       });
     }
     m.check('lcp', 'LCP', 3, issues);
@@ -251,6 +264,7 @@ export function runPerformance(ctx: AuditContext): AuditResult {
         evidence: [
           { type: 'metric', url, detected: `CLS=${cls.toFixed(3)}`, expected: `CLS ≤ ${CLS.good}` },
           ...culprits.slice(0, 3).map((i) => ({ type: 'metric' as const, url, detected: summarizeItem(i) })).filter((e) => e.detected),
+          ...seriesEvidence(lh, url, 'cls', (v) => v.toFixed(3)),
         ],
       });
     }
@@ -273,6 +287,7 @@ export function runPerformance(ctx: AuditContext): AuditResult {
         evidence: [
           { type: 'metric', url, detected: `TBT=${Math.round(tbt)}ms`, expected: `TBT ≤ ${TBT.good}ms` },
           ...scripts.map((i) => ({ type: 'metric' as const, url, detected: summarizeItem(i) })),
+          ...seriesEvidence(lh, url, 'tbtMs', (v) => `${Math.round(v)} ms`),
         ],
       });
     }
@@ -304,12 +319,19 @@ export function runPerformance(ctx: AuditContext): AuditResult {
   if (insightIssues.length) m.info('lh-insights', 'Diagnoza Lighthouse (shkaqe)', [`${insightIssues.length} diagnoza me kursim të vlerësuar`], insightIssues);
 
   m.limitations.push(
-    `Performance: rezultat laboratorik Lighthouse ${lh.lighthouseVersion} (mobile, throttling ${lh.throttlingMethod ?? 'simulate'}), vetëm faqja hyrëse, një ekzekutim — nuk përfaqëson gjithë sitin dhe ndryshon mes ekzekutimeve.`,
+    lh.series && lh.series.planned > 1
+      ? `Performance: rezultat laboratorik Lighthouse ${lh.lighthouseVersion} (mobile, throttling ${lh.throttlingMethod ?? 'simulate'}), vetëm faqja hyrëse. Seri me ${lh.series.planned} matje të planifikuara, ${lh.series.valid} të vlefshme; pikët dhe issue-t vijnë nga matja përfaqësuese #${lh.series.representativeRun} (Performance mediane). Mediana dhe min–max janë te lighthouse.series; ndryshimet mes matjeve s'fshihen.`
+      : `Performance: rezultat laboratorik Lighthouse ${lh.lighthouseVersion} (mobile, throttling ${lh.throttlingMethod ?? 'simulate'}), vetëm faqja hyrëse, një ekzekutim — nuk përfaqëson gjithë sitin dhe ndryshon mes ekzekutimeve.`,
     'INP: unavailable — s\'ka të dhëna fushore (CrUX) të konfiguruara; INP s\'matet në laborator.',
   );
   if (lh.runWarnings.length) m.limitations.push(...lh.runWarnings.map((w) => `Lighthouse warning: ${w}`));
   for (const f of lh.failedAttempts ?? []) {
-    m.limitations.push(`Lighthouse: përpjekja ${f.attempt} dështoi (${f.code ?? 'gabim'}) — gabim i regjistrimit të trace-it në Chrome, jo i faqes; rezultati është nga përpjekja ${lh.failedAttempts.length + 1}.`);
+    const inRun = lh.series && lh.series.planned > 1 ? ` e matjes përfaqësuese #${lh.series.representativeRun}` : '';
+    m.limitations.push(`Lighthouse: përpjekja ${f.attempt}${inRun} dështoi (${f.code ?? 'gabim'}) — gabim i regjistrimit të trace-it në Chrome, jo i faqes; rezultati${inRun ? ' i kësaj matjeje' : ''} është nga përpjekja ${lh.failedAttempts.length + 1}${inRun ? ' (riprovim teknik, jo matje e re)' : ''}.`);
+  }
+  for (const r of lh.series?.runs ?? []) {
+    if (r.status === 'failed') m.limitations.push(`Lighthouse: matja e planifikuar #${r.run} dështoi (${r.error?.code ?? 'gabim'}) — s'hyn në seri; mbetën ${lh.series!.valid} matje të vlefshme nga ${lh.series!.planned}.`);
+    else if (r.technicalRetries.length && r.run !== lh.series!.representativeRun) m.limitations.push(`Lighthouse: matja #${r.run} pati ${r.technicalRetries.length} riprovim teknik (${r.technicalRetries.map((x) => x.code ?? 'gabim').join(', ')}) brenda së njëjtës matje — s'është matje e re.`);
   }
   if (lh.blockedRequests.length) {
     m.limitations.push(`${lh.blockedRequests.length} kërkesa të browser-it drejt adresave lokale/private u bllokuan (p.sh. ${lh.blockedRequests[0]!.url}).`);

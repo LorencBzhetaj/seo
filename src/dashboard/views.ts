@@ -8,6 +8,8 @@ import { gallery, type Gallery } from './visual.js';
 import type { PixelDiffResult, VisualCompare } from './visual-compare.js';
 import { visualCompareBody, visualComparePanel } from './views-visual-compare.js';
 import { buildTasks } from './tasks.js';
+import { seriesOf, type SeriesCompare } from './lh-series.js';
+import { seriesComparePanel, seriesPanel } from './views-series.js';
 import { blockedWarning, tasksBody, tasksHref, tasksPanel } from './views-tasks.js';
 
 /** Qasja te skedarët lokalë (screenshot, LHR): vetëm kontroll ekzistence, pa lexim përmbajtjeje. */
@@ -191,6 +193,10 @@ ${quickNav(file, issues, ctx.g, tasks.tasks.length)}
 ${tasks.blocked ? blockedWarning(tasks.blocked, tasks.measuredOnBlock.length) : ''}
 ${arr(r.partialModules).length ? html`<div class="warnbox">Module të pjesshme/të anashkaluara: ${arr(r.partialModules).map((m) => str(obj(m).module) || str(m)).join(', ')}</div>` : ''}
 <div class="grid">${homePanel}${sitePanel}</div>
+${(() => {
+  const series = seriesOf(r);
+  return series ? seriesPanel(series, (n) => (files.lhrExists(n) ? `/lhr/${encodeURIComponent(n)}` : null)) : '';
+})()}
 ${tasksPanel(file, tasks)}
 ${visualPanel(file, ctx.g)}
 ${qualityPanel(r, issues, ctx)}
@@ -339,7 +345,7 @@ ${limitationsPanel(arr(r.limitations).map(str))}`,
 
 // ---------------------------------------------------------------- Krahasimi
 
-const VERDICT_LABELS: Record<string, string> = { improved: 'u përmirësua', worsened: 'u përkeqësua', 'measured-increase': 'rritje e matur, kërkon konfirmim', 'measured-decrease': 'rënie e matur, kërkon konfirmim', same: 'pa ndryshim', noise: 'brenda variacionit', 'not-comparable': "s'krahasohet" };
+const VERDICT_LABELS: Record<string, string> = { improved: 'u përmirësua', worsened: 'u përkeqësua', 'measured-increase': 'rritje e matur, kërkon konfirmim', 'measured-decrease': 'rënie e matur, kërkon konfirmim', same: 'pa ndryshim', noise: 'brenda variacionit', inconclusive: 'intervalet e serive mbivendosen — pa përfundim', 'not-comparable': "s'krahasohet" };
 
 export function comparePickerView(list: ListResult, q: Query, error?: string): string {
   const opt = (r: ReportSummary, sel?: string) => html`<option value="${r.file}" ${sel === r.file ? html`selected` : ''}>${r.target} · ${fmtDate(r.date)} · ${KIND_LABELS[r.kind]}</option>`;
@@ -356,7 +362,7 @@ ${error ? html`<div class="warnbox">${error}</div>` : ''}
 
 function changeList(title: string, items: IssueChange[], cls: string, withReason = false): SafeHtml {
   return html`<section class="panel"><h2>${title} <span class="badge b-${cls}">${items.length}</span></h2>
-${items.length ? html`<table><thead><tr><th>Rëndësia</th><th>Gjetja</th><th>Faqja</th><th>Seksioni</th>${withReason ? html`<th>Pse s'krahasohet</th>` : ''}</tr></thead><tbody>
+${items.length ? html`<table><thead><tr><th>Rëndësia</th><th>Gjetja</th><th>Faqja</th><th>Seksioni</th>${withReason ? html`<th>${title.startsWith('Të reja') ? 'Kujdes' : "Pse s'krahasohet"}</th>` : ''}</tr></thead><tbody>
 ${items.map((i) => html`<tr><td>${sevBadge(i.severity as Sev)}</td><td>${i.message} <div class="code">${i.code}</div></td><td class="note">${truncate(i.url, 60)}</td><td class="note">${SECTION_LABELS[i.section]}</td>${withReason ? html`<td class="note">${i.reason ?? ''}</td>` : ''}</tr>`)}
 </tbody></table>` : html`<p class="note">Asnjë.</p>`}</section>`;
 }
@@ -367,7 +373,7 @@ ${rows.map((r) => html`<tr><td>${r.label}</td><td class="num">${scoreText(r.a)}<
 </tbody></table>`;
 }
 
-export function compareView(c: CompareResult, visual?: VisualCompare): string {
+export function compareView(c: CompareResult, visual?: VisualCompare, series?: SeriesCompare | null): string {
   const head = html`<h1>Krahasimi: ${c.a.target}</h1>
 <p class="sub">A: <a href="${reportHref(c.a.file)}">${fmtDate(c.a.date)}</a> ${badge(c.a.status, STATUS_LABELS[c.a.status])} → B: <a href="${reportHref(c.b.file)}">${fmtDate(c.b.date)}</a> ${badge(c.b.status, STATUS_LABELS[c.b.status])}</p>`;
   if (!c.sameTarget) return layout('Krahasimi', html`${head}<div class="warnbox">${c.reason ?? ''}</div>`);
@@ -379,12 +385,13 @@ export function compareView(c: CompareResult, visual?: VisualCompare): string {
 <div class="panel"><h2>Kujdes para leximit</h2><ul class="plain">${c.caveats.map((x) => html`<li>${x}</li>`)}<li>${PROVISIONAL_THRESHOLDS}</li></ul></div>
 ${visual?.sameTarget && c.a.kind === 'url' ? visualComparePanel(visual) : ''}
 ${home.length ? html`<section class="panel scope"><h2>Faqja hyrëse</h2>
-<p class="note">Lighthouse: ${c.lighthouse.comparable ? 'konfigurim i njëjtë' : html`<strong>i pakrahasueshëm</strong>`}${c.lighthouse.differences.length ? html` — ${c.lighthouse.differences.join('; ')}` : ''}. Performance ndryshon mes ekzekutimeve edhe pa ndryshim në sit.</p>
+<p class="note">Lighthouse: ${c.lighthouse.comparable ? 'konfigurim i njëjtë' : html`<strong>i pakrahasueshëm</strong>`}${c.lighthouse.differences.length ? html` — ${c.lighthouse.differences.join('; ')}` : ''}. Performance ndryshon mes ekzekutimeve edhe pa ndryshim në sit.${series && (series.a.real || series.b.real) ? html` Pikët më poshtë vijnë nga matja përfaqësuese e secilit raport; variacioni i serive është te <a href="#lighthouse-seria">krahasimi i serive</a>.` : ''}</p>
 ${scoreTable(home)}</section>` : ''}
+${series && c.sameTarget && c.a.kind === 'url' && (series.a.real || series.b.real) ? seriesComparePanel(series) : ''}
 ${site.length ? html`<section class="panel scope"><h2>Siti (faqet e kontrolluara)</h2><p class="note">Krahasohen vetëm kur faqet e kontrolluara janë pothuajse të njëjta (≥ 90%).</p>${scoreTable(site)}</section>` : ''}
 ${changeList('U zgjidhën (në A, jo në B)', c.resolved, 'improved')}
 ${changeList('Nuk u rilevua në matjen e fundit, kërkon konfirmim', c.notRedetected, 'noise')}
-${changeList('Të reja (në B, jo në A)', c.added, 'worsened')}
+${changeList('Të reja (në B, jo në A)', c.added, 'worsened', c.added.some((i) => i.reason))}
 ${changeList("S'krahasohen", c.notComparable, 'not-comparable', true)}
 ${changeList('Mbetën', c.persisted, 'same')}
 ${c.quality ? html`<section class="panel signals"><h2>Sinjalet e cilësisë <span class="note">(jashtë Health; s'janë provë autorësie AI)</span></h2>

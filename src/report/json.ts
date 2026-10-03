@@ -65,7 +65,9 @@ export function buildReport(run: AuditRun) {
           // Përpjekje të dështuara para rezultatit (p.sh. NO_NAVSTART) — s'fshihen.
           failedAttempts: lh.failedAttempts ?? [],
         }
-      : { status: ctx?.lighthouse.status, code: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.code : undefined, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }) },
+      : { status: ctx?.lighthouse.status, code: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.code : undefined, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }),
+      // Faza 4: çdo matje veç + përmbledhja; mungon kur u planifikua vetëm 1 matje (raportet si më parë).
+      ...(ctx?.lighthouseSeries ? { series: ctx.lighthouseSeries } : {}) },
     runId: run.id,
     url: run.url,
     finalUrl: main?.finalUrl,
@@ -106,18 +108,42 @@ export function lhrFileName(report: AuditReport): string {
   return reportFileName(report).replace(/\.json$/, '.lhr.json');
 }
 
+/** LHR e një matjeje të serisë: `….run2.lhr.json`. */
+export function seriesLhrFileName(report: AuditReport, run: number): string {
+  return reportFileName(report).replace(/\.json$/, `.run${run}.lhr.json`);
+}
+
 /**
  * Shkruan raportin JSON dhe, kur jepet (vetëm me --save-lhr), LHR-në e plotë pranë tij.
  * Raporti e emërton LHR-në te `lighthouse.lhrFile`, që të dy skedarët të lidhen qartë.
+ * Me seri matjesh: një LHR për çdo matje të vlefshme (`….runN.lhr.json`, te `series.runs[].lhrFile`);
+ * `lhrFile` tregon LHR-në e matjes përfaqësuese.
  */
 export function writeReport(
   report: AuditReport,
   outputDir: string,
   rawLhr?: unknown,
-): { reportPath: string; lhrPath?: string; report: AuditReport } {
+  seriesLhrs?: { run: number; lhr: unknown }[],
+): { reportPath: string; lhrPath?: string; lhrPaths?: string[]; report: AuditReport } {
   fs.mkdirSync(outputDir, { recursive: true });
   let written = report;
   let lhrPath: string | undefined;
+  const series = (report.lighthouse as { series?: { representativeRun: number | null; runs: { run: number; lhrFile?: string }[] } }).series;
+  if (seriesLhrs?.length && series) {
+    const files = new Map<number, string>();
+    const lhrPaths: string[] = [];
+    for (const { run, lhr } of seriesLhrs) {
+      const name = seriesLhrFileName(report, run);
+      writeFileAtomic(path.join(outputDir, name), JSON.stringify(lhr));
+      files.set(run, name);
+      lhrPaths.push(path.join(outputDir, name));
+    }
+    const rep = series.representativeRun !== null ? files.get(series.representativeRun) : undefined;
+    written = { ...report, lighthouse: { ...report.lighthouse, lhrFile: rep, series: { ...series, runs: series.runs.map((r) => (files.has(r.run) ? { ...r, lhrFile: files.get(r.run) } : r)) } } as AuditReport['lighthouse'] };
+    const reportPath = path.join(outputDir, reportFileName(written));
+    writeFileAtomic(reportPath, `${JSON.stringify(written, null, 2)}\n`);
+    return { reportPath, lhrPath: rep ? path.join(outputDir, rep) : undefined, lhrPaths, report: written };
+  }
   if (rawLhr !== undefined) {
     const name = lhrFileName(report);
     lhrPath = path.join(outputDir, name);

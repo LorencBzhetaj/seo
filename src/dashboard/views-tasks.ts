@@ -103,7 +103,7 @@ ${AREAS.map((a) => {
     if (!ts.length) return '';
     return html`<section class="panel ${a === 'quality' ? 'signals' : ''}" id="zona-${a}"><h2>${AREA_LABELS[a]} <span class="note">(${String(ts.length)})</span></h2>
 ${a === 'quality' ? html`<p class="note">Sinjale për shqyrtim njerëzor, jashtë Health Score. S'janë shkelje të konfirmuara të WCAG dhe s'vlerësojnë autorësinë e përmbajtjes.</p>` : ''}
-${a === 'homepage' ? html`<p class="note">Gjetjet e Lighthouse vijnë nga një matje e vetme në mobile; konfirmoji me disa ekzekutime.</p>` : ''}
+${a === 'homepage' ? (list.lighthouseSeries ? html`<p class="note">Gjetjet e Lighthouse vijnë nga matja përfaqësuese #${String(list.lighthouseSeries.representativeRun ?? '—')} e një serie me ${String(list.lighthouseSeries.valid)} matje të vlefshme nga ${String(list.lighthouseSeries.planned)} (mobile); variacioni është te paneli i serisë në raport.</p>` : html`<p class="note">Gjetjet e Lighthouse vijnë nga një matje e vetme në mobile; konfirmoji me disa ekzekutime.</p>`) : ''}
 ${ts.map((t) => taskBlock(file, t, list, ++n))}</section>`;
   })}
 ${list.measuredOnBlock.length ? html`<section class="panel" id="matur-te-bllokimi"><h2>Matur te përgjigjja e bllokimit — s'janë detyra <span class="note">(${String(list.measuredOnBlock.length)})</span></h2>

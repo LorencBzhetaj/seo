@@ -125,6 +125,8 @@ export interface TaskList {
   blocked: BlockedResponse | null;
   /** Gjetje të faqes hyrëse të matura te përgjigjja e bllokimit: s'janë detyra. */
   measuredOnBlock: IssueView[];
+  /** Seria e Lighthouse (faza 4), kur raporti e ka: nga cila matje vijnë gjetjet. */
+  lighthouseSeries: { planned: number; valid: number; representativeRun: number | null } | null;
   /** Indeksi i gjetjes (në urlIssues) → id e detyrës. */
   taskOfFinding: Map<number, string>;
 }
@@ -398,5 +400,7 @@ export function buildTasks(r: Obj, issues: IssueView[]): TaskList {
 
   const taskOfFinding = new Map<number, string>();
   for (const t of tasks) for (const f of t.findings) taskOfFinding.set(f.index, t.id);
-  return { tasks, coverage, taskOfFinding, blocked, measuredOnBlock };
+  const ls = obj(obj(r.lighthouse).series);
+  const lighthouseSeries = obj(r.lighthouse).series ? { planned: num(ls.planned) ?? 0, valid: num(ls.valid) ?? 0, representativeRun: num(ls.representativeRun) } : null;
+  return { tasks, coverage, taskOfFinding, blocked, measuredOnBlock, lighthouseSeries };
 }

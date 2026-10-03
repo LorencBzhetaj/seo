@@ -1,4 +1,4 @@
-import { MAX_DEPTH, MAX_PAGES, URL_DEFAULTS, type FolderCheck } from './forms.js';
+import { MAX_DEPTH, MAX_LH_RUNS, MAX_PAGES, URL_DEFAULTS, type FolderCheck } from './forms.js';
 import { externalLink, html, truncate, type SafeHtml } from './html.js';
 import type { BrowserLookup } from '../core/browser.js';
 import type { Job, JobState } from './jobs.js';
@@ -88,6 +88,8 @@ ${state.kind === 'url' ? errorsBox(state.errors) : ''}
 <label class="field">Thellësia e linkeve<input type="number" name="maxDepth" min="0" max="${MAX_DEPTH}" value="${state.kind === 'url' ? v.maxDepth ?? URL_DEFAULTS.maxDepth : URL_DEFAULTS.maxDepth}"></label></div>
 ${checkbox('crawl', 'Crawl i kufizuar i sitit', urlChecked('crawl'), `(parazgjedhje: po; maks. ${MAX_PAGES} faqe)`)}
 ${checkbox('lighthouse', 'Lighthouse mobile', urlChecked('lighthouse'), '(parazgjedhje: po; kërkon Chrome ose Edge)')}
+<label class="field">Matje Lighthouse (faqja hyrëse)<input type="number" name="lighthouseRuns" min="1" max="${MAX_LH_RUNS}" value="${state.kind === 'url' ? v.lighthouseRuns ?? URL_DEFAULTS.lighthouseRuns : URL_DEFAULTS.lighthouseRuns}"></label>
+<p class="note">Parazgjedhje 1, maks. ${MAX_LH_RUNS}. Përsëritet vetëm Lighthouse (~30–60 s secila matje); crawl-i dhe kontrollet e tjera bëhen një herë. Health dhe issue-t vijnë nga matja përfaqësuese (Performance mediane).</p>
 ${checkbox('business', 'Biznes & privatësi', urlChecked('business'), '(parazgjedhje: po)')}
 ${checkbox('quality', 'Cilësia e përmbajtjes', urlChecked('quality'), '(parazgjedhje: po; sinjale, jashtë Health)')}
 ${checkbox('visual', 'Pamja desktop + mobile', urlChecked('visual'), '(parazgjedhje: po; kërkon Chrome ose Edge)')}

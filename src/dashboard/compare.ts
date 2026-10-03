@@ -1,6 +1,7 @@
 import { CATEGORY_LABELS, SITE_CATEGORY_LABELS } from '../core/schemas.js';
 import { checkedPages, sectionsPresent, sourceFindings, urlIssues, type IssueView, type Section, type SourceFindingView } from './model.js';
 import { arr, num, obj, str, summarize, type Obj, type ReportSummary } from './store.js';
+import { compareSeries, seriesForCompare } from './lh-series.js';
 
 /**
  * Krahasimi i dy raporteve të të njëjtit sit. Një ndryshim quhet "përmirësim/përkeqësim" vetëm kur
@@ -12,7 +13,7 @@ import { arr, num, obj, str, summarize, type Obj, type ReportSummary } from './s
  * measured-increase/-decrease: ndryshim i matur nga një ekzekutim i vetëm Lighthouse për raport — s'quhet
  * përmirësim/përkeqësim pa konfirmim me disa ekzekutime.
  */
-export type Verdict = 'improved' | 'worsened' | 'measured-increase' | 'measured-decrease' | 'same' | 'noise' | 'not-comparable';
+export type Verdict = 'improved' | 'worsened' | 'measured-increase' | 'measured-decrease' | 'same' | 'noise' | 'inconclusive' | 'not-comparable';
 
 /** Pragje PROVIZORE, të pakalibruara: variacioni i Lighthouse dhe mbivendosja minimale e faqeve të crawl-it. */
 export const PROVISIONAL_THRESHOLDS = 'Pragjet ±5 pikë (Lighthouse) dhe ≥ 90% faqe të përbashkëta (crawl) janë provizore, të pakalibruara.';
@@ -130,6 +131,14 @@ export function compareReports(fileA: string, a: Obj, fileB: string, b: Obj): Co
   const benchA = num(obj(a.lighthouse).benchmarkIndex) === null ? null : Math.round(num(obj(a.lighthouse).benchmarkIndex)!);
   const benchB = num(obj(b.lighthouse).benchmarkIndex) === null ? null : Math.round(num(obj(b.lighthouse).benchmarkIndex)!);
   const scores: ScoreRow[] = [];
+  // Seritë Lighthouse (faza 4): përdoren për rreshtat e Lighthouse vetëm kur të dyja kanë ≥ 2 matje të vlefshme
+  // dhe konfigurim të njëjtë; seritë me prova të pamjaftueshme s'trajtohen si interval.
+  const sA = seriesForCompare(a);
+  const sB = seriesForCompare(b);
+  const series = sA && sB && (sA.real || sB.real) ? compareSeries(sA, sB) : null;
+  const seriesRows = series && series.comparable && sA!.valid >= 2 && sB!.valid >= 2 ? new Map(series.rows.map((r) => [r.key as string, r])) : undefined;
+  const insufficient = [sA, sB].filter((s) => s?.insufficient).length;
+  if (insufficient) caveats.push(`Seri me prova të pamjaftueshme: ${[['A', sA], ['B', sB]].filter(([, s]) => (s as typeof sA)?.insufficient).map(([n, s]) => `${n} ${(s as typeof sA)!.valid}/${(s as typeof sA)!.planned} matje të vlefshme`).join(', ')}. Pikët e Lighthouse krahasohen si matje të vetme.`);
   const ha = obj(a.health);
   const hb = obj(b.health);
   const healthOk = str(a.scoringVersion) === str(b.scoringVersion) && lh.comparable && str(ha.status) !== 'PARTIAL' && str(hb.status) !== 'PARTIAL';
@@ -144,7 +153,20 @@ export function compareReports(fileA: string, a: Obj, fileB: string, b: Obj): Co
     const isLh = LH_CATEGORIES.has(key);
     const v = verdictOf(x, y, isLh ? LH_NOISE : 0);
     const row: ScoreRow = { key, label, group: 'homepage', a: x, b: y, ...v };
+    const sRow = seriesRows?.get(key);
     if (isLh && !lh.comparable && v.verdict !== 'not-comparable') Object.assign(row, { verdict: 'not-comparable', note: 'ekzekutime Lighthouse me konfigurim/mjedis të ndryshëm' });
+    // Faza 4: me dy seri të krahasueshme (≥ 2 matje të vlefshme secila), vlerësimi vjen nga intervalet e serive,
+    // që rreshti i pikëve dhe paneli i serive të mos japin përfundime kundërshtuese.
+    else if (isLh && sRow && v.verdict !== 'not-comparable' && v.verdict !== 'same') {
+      if (sRow.verdict === 'overlap') Object.assign(row, { verdict: 'inconclusive', note: 'intervalet e vëzhguara të serive mbivendosen — pa përfundim; pikët janë nga matja përfaqësuese e secilës seri' });
+      else if (sRow.verdict === 'outside') Object.assign(row, { verdict: (row.delta ?? 0) > 0 ? 'measured-increase' : 'measured-decrease', note: `intervalet e serive s'mbivendosen — ndryshim i matur, kërkon konfirmim${series?.machineWarning ? '; fuqia e makinës ndryshoi shumë mes serive' : ''}` });
+    }
+    // Availability: kur ndryshon vetëm koha e përgjigjes (TTFB, 1 matje lokale), s'quhet përmirësim/përkeqësim.
+    else if (key === 'availability' && (v.verdict === 'improved' || v.verdict === 'worsened')) {
+      const t = timingOnlyChange(a, b);
+      if (t) Object.assign(row, { verdict: measured(v.verdict), note: t });
+      else row.note = availabilityChange(a, b);
+    }
     else if (v.verdict === 'noise') row.note = `ndryshim ≤ ${LH_NOISE}: brenda variacionit të zakonshëm të Lighthouse; konfirmoje me disa ekzekutime`;
     else if (isLh && (v.verdict === 'improved' || v.verdict === 'worsened')) Object.assign(row, { verdict: measured(v.verdict), note: `një ekzekutim Lighthouse për raport (benchmarkIndex ${benchA ?? '?'} → ${benchB ?? '?'}); rezultati ndryshon mes ekzekutimeve — konfirmoje me disa para se ta quash ${v.verdict === 'improved' ? 'përmirësim' : 'përkeqësim'}` });
     else if (v.verdict === 'not-comparable') row.note = 'mungon në njërin raport (skipped/pa të dhëna)';
@@ -204,13 +226,16 @@ export function compareReports(fileA: string, a: Obj, fileB: string, b: Obj): Co
       if (r) out.notComparable.push(change(i, r));
       // Lighthouse: një ekzekutim për raport — mungesa te B s'provon që u zgjidh.
       else if (LH_MODULES.has(i.module)) out.notRedetected.push(change(i, 'nuk u rilevua në matjen e fundit të Lighthouse (një ekzekutim), kërkon konfirmim'));
+      else if (TIMING_CODES.has(i.code)) out.notRedetected.push(change(i, "matje e vetme kohore (TTFB): mungesa te B s'provon që u zgjidh, kërkon konfirmim"));
       else out.resolved.push(change(i));
     }
   }
   for (const i of ib) {
     if (keysA.has(i.key)) continue;
     const r = why(i, 'A');
-    (r ? out.notComparable : out.added).push(change(i, r));
+    if (!r && TIMING_CODES.has(i.code)) out.added.push(change(i, 'matje e vetme kohore (TTFB): mund të jetë luhatje, kërkon konfirmim'));
+    else if (!r && LH_MODULES.has(i.module)) out.added.push(change(i, 'u shfaq në matjen (përfaqësuese) të Lighthouse të B — një matje, kërkon konfirmim'));
+    else (r ? out.notComparable : out.added).push(change(i, r));
   }
 
   // --- Cilësia: sinjale për shqyrtim, jashtë Health; vetëm numërim ---
@@ -249,4 +274,53 @@ function compareSource(base: CompareResult, a: Obj, b: Obj): CompareResult {
     added: fb.filter((f) => !ka.has(key(f))).map((f) => ch(f)),
     persisted: fb.filter((f) => ka.has(key(f))).map((f) => ch(f)),
   };
+}
+
+/** Kontrollet e një moduli sipas id-së: statusi dhe pika. */
+function moduleChecks(r: Obj, module: string): Map<string, { status: string; score: number | null }> {
+  const m = arr(r.modules).map(obj).find((x) => str(x.module) === module);
+  return new Map(arr(m?.checks).map(obj).map((c) => [str(c.id), { status: str(c.status), score: num(c.score) }]));
+}
+
+function moduleMetric(r: Obj, module: string, id: string): number | null {
+  const m = arr(r.modules).map(obj).find((x) => str(x.module) === module);
+  return num(arr(m?.metrics).map(obj).find((x) => str(x.id) === id)?.value);
+}
+
+/** Kontrollet e matura nga një kërkesë e vetme kohore (luhatin mes ekzekutimeve). */
+const TIMING_CHECKS = new Set(['response-time']);
+/** Gjetjet nga një matje e vetme kohore: mungesa/shfaqja e tyre s'quhet e zgjidhur/e re pa konfirmim. */
+export const TIMING_CODES = new Set(['SLOW_SERVER_RESPONSE']);
+
+/**
+ * Availability: nëse ndryshoi vetëm kontrolli i kohës së përgjigjes (TTFB, 1 matje lokale) dhe statusi HTTP,
+ * qasja dhe ridrejtimet janë të njëjta, kthen shpjegimin; përndryshe undefined (ndryshim real).
+ */
+export function timingOnlyChange(a: Obj, b: Obj): string | undefined {
+  const ca = moduleChecks(a, 'availability');
+  const cb = moduleChecks(b, 'availability');
+  if (!ca.size || !cb.size) return undefined;
+  const changed = [...new Set([...ca.keys(), ...cb.keys()])].filter((id) => ca.get(id)?.status !== cb.get(id)?.status || ca.get(id)?.score !== cb.get(id)?.score);
+  if (!changed.length || !changed.every((id) => TIMING_CHECKS.has(id))) return undefined;
+  const sa = moduleMetric(a, 'availability', 'http-status');
+  const sb = moduleMetric(b, 'availability', 'http-status');
+  if (sa !== sb || str(obj(a.access).state) !== str(obj(b.access).state)) return undefined;
+  const ta = moduleMetric(a, 'availability', 'ttfb');
+  const tb = moduleMetric(b, 'availability', 'ttfb');
+  return `ndryshoi vetëm koha e përgjigjes: TTFB ${ta ?? '?'} ms → ${tb ?? '?'} ms (1 matje lokale secili, pragu 800 ms); statusi HTTP ${sa ?? '?'} në të dy, pa ndryshim qasjeje ose ridrejtimesh — luhatje e mundshme e një matjeje, kërkon konfirmim`;
+}
+
+/** Shpjegimi i një ndryshimi real të Availability (status HTTP, qasje, ridrejtime). */
+export function availabilityChange(a: Obj, b: Obj): string {
+  const sa = moduleMetric(a, 'availability', 'http-status');
+  const sb = moduleMetric(b, 'availability', 'http-status');
+  const parts: string[] = [];
+  if (sa !== sb) parts.push(`statusi HTTP ${sa ?? '?'} → ${sb ?? '?'}`);
+  const qa = str(obj(a.access).state);
+  const qb = str(obj(b.access).state);
+  if (qa !== qb && (qa || qb)) parts.push(`qasja ${qa || '?'} → ${qb || '?'}`);
+  const ca = moduleChecks(a, 'availability');
+  const cb = moduleChecks(b, 'availability');
+  for (const id of new Set([...ca.keys(), ...cb.keys()])) if (!TIMING_CHECKS.has(id) && id !== 'http-status' && ca.get(id)?.status !== cb.get(id)?.status) parts.push(`${id}: ${ca.get(id)?.status ?? '?'} → ${cb.get(id)?.status ?? '?'}`);
+  return parts.length ? parts.join('; ') : 'ndryshim i kontrolleve të availability (shih raportet)';
 }

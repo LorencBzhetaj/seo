@@ -27,7 +27,7 @@ th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;le
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:var(--chip);white-space:nowrap}
 .b-complete,.b-pass,.b-improved{color:var(--ok)}.b-partial,.b-warning,.b-noise,.b-measured-increase,.b-measured-decrease{color:var(--warn)}
-.b-fail,.b-worsened{color:var(--crit)}.b-skipped,.b-not-comparable,.b-unknown,.b-info,.b-same{color:var(--muted)}
+.b-fail,.b-worsened{color:var(--crit)}.b-skipped,.b-not-comparable,.b-unknown,.b-info,.b-same,.b-inconclusive{color:var(--muted)}
 .sev-critical{color:var(--crit)}.sev-high{color:var(--high)}.sev-medium{color:var(--med)}.sev-low{color:var(--low)}
 .score{font-size:40px;font-weight:700;line-height:1}
 .score small{font-size:14px;color:var(--muted);font-weight:500}

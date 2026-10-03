@@ -86,6 +86,7 @@ Opsione:
 | `--config <file>` | Config JSON (parazgjedhje `./config.json` nëse ekziston) |
 | `--no-lighthouse` | Pa Lighthouse (më shpejt; raporti del `partial`) |
 | `--chrome-path <path>` | Rruga e Chrome nëse s'gjendet automatikisht |
+| `--lighthouse-runs <n>` | Matje Lighthouse të përsëritura për faqen hyrëse, 1–5 (parazgjedhje 1; shih "Matje të përsëritura") |
 | `--save-lhr` | Ruaj edhe LHR-në e plotë të Lighthouse pranë raportit (joaktiv si parazgjedhje; shih më poshtë) |
 | `--ignore-robots` | Anashkalo robots.txt për tool-in — **vetëm për site që i kontrollon vetë** |
 | `--allow-local <host:port>` | **Vetëm për fixtures/teste**: lejo një host lokal |
@@ -110,6 +111,23 @@ output/gjecaj.al-20260928-180745.lhr.json  ← LHR i të njëjtit audit
 Raporti e emërton skedarin te `lighthouse.lhrFile`. LHR-ja shërben për të verifikuar evidence-n, p.sh. LCP e simuluar kundrejt asaj të vëzhguar. Mund ta hapësh në [Lighthouse Viewer](https://googlechrome.github.io/lighthouse/viewer/), por vetëm pasi ta kesh kontrolluar. Nëse Lighthouse s'jep rezultat (bllokim, `--no-lighthouse`), LHR nuk ruhet dhe CLI e thotë pse.
 
 > ⚠️ **LHR-ja mund të përmbajë të dhëna të faqes që s'duhen shpërndarë pa kontroll:** URL të plota (edhe me query), listën e kërkesave të rrjetit dhe palët e treta, fragmente HTML dhe tekst të elementeve, si dhe screenshot-e të faqes në base64. Mbetet vetëm lokalisht te `output/`, që është jashtë Git. Mos e ngarko dhe mos e ndaj pa e shqyrtuar.
+
+### Matje të përsëritura Lighthouse (`--lighthouse-runs`)
+
+Një matje e vetme Lighthouse ndryshon nga një ekzekutim te tjetri. Me `--lighthouse-runs 3` (ose fusha "Matje Lighthouse" te dashboard-i), Lighthouse mobile ekzekutohet 3 herë mbi të njëjtën URL dhe me të njëjtin konfigurim. Çdo matje nis Chrome-in nga e para dhe zgjat rreth 20–60 s. Crawl-i dhe kontrollet e tjera bëhen vetëm një herë. Parazgjedhja është 1, kufiri 5. Progresi tregon "matja 2/3", dhe anulimi ndalon serinë menjëherë: s'niset matja e radhës dhe s'shkruhet raport.
+
+- **Rregulli i burimit të vlerave:** Health Score, kategoritë dhe issue-t e Lighthouse vijnë nga **matja përfaqësuese**. Kjo është matja e vlefshme me Performance mediane; për numër çift merret më e ulëta nga dy matjet e mesit, dhe për barazim më e hershmja. Vlerat e matjeve të ndryshme nuk përzihen në një issue. Te LCP/CLS/TBT, prova e fundit thotë nga cila matje vjen vlera dhe jep intervalin e serisë veç.
+- **`lighthouse.series` në JSON:**
+  - çdo matje veç: ora, kohëzgjatja, konfigurimi (versioni, form factor, throttling, gjerësia e ekranit, Chrome, benchmarkIndex), pikët, LCP/CLS/TBT/FCP/Speed Index dhe gabimi kur dështoi;
+  - përmbledhja: mediana (për numër çift, mesatarja e dy vlerave të mesit), min–max dhe sa matje janë të vlefshme.
+- **Dështimet:** një matje që dështon regjistrohet dhe seria vazhdon; statistikat përdorin vetëm matjet e vlefshme. Nëse asnjë s'jep rezultat, Lighthouse del i dështuar, pa vlera të shpikura. Riprovimi teknik i `NO_NAVSTART` ndodh brenda së njëjtës matje dhe del te `technicalRetries`; nuk numërohet si matje e re.
+- **`--save-lhr` me seri:** ruhet një LHR për çdo matje të vlefshme (`….run2.lhr.json`). `lighthouse.lhrFile` tregon LHR-në e matjes përfaqësuese.
+- **Dashboard-i:**
+  - raporti tregon panelin "Lighthouse: seri matjesh";
+  - krahasimi tregon "krahasimi i serive" vetëm kur konfigurimi është i njëjtë. Intervalet që mbivendosen dalin "intervalet e vëzhguara mbivendosen — pa përfundim", të tjerat "ndryshim jashtë intervaleve — kërkon konfirmim". Intervalet min–max janë orientuese: 3–5 matje nuk mjaftojnë për përfundim statistikor. Asnjë ndryshim nuk quhet "përmirësim i konfirmuar". Rreshtat e pikëve të Lighthouse (Performance, Accessibility, Best Practices) marrin të njëjtin vlerësim nga seritë, që të mos kundërshtojnë panelin.
+  - **Seri me prova të pamjaftueshme:** kur nga 2–5 matje të planifikuara vlen vetëm 1, rezultati ruhet, por raporti dhe krahasimi shfaqin "seri me prova të pamjaftueshme: 1/N matje të vlefshme". Një seri e tillë nuk trajtohet si interval: krahasohet si matje e vetme.
+  - **Availability:** kur ndryshon vetëm koha e përgjigjes (TTFB, 1 matje lokale) dhe statusi HTTP, qasja dhe ridrejtimet janë të njëjta, krahasimi tregon "rritje/rënie e matur, kërkon konfirmim" me TTFB-të dhe pragun 800 ms. Gjetja `SLOW_SERVER_RESPONSE` nuk quhet "u zgjidh" pa konfirmim. Ndryshimet e statusit HTTP ose të qasjes mbeten "u përmirësua/u përkeqësua", me shkakun.
+- **Raportet me 1 matje dhe ato të vjetra** nuk kanë `series` dhe hapen si më parë; në krahasim trajtohen si "1 matje, pa interval".
 
 ### Lighthouse NO_NAVSTART (shkak ende i papërcaktuar)
 

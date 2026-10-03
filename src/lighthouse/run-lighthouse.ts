@@ -6,6 +6,7 @@ import type { AuditConfig } from '../core/config.js';
 import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
 import { removeSync } from '../core/fsutil.js';
+import type { LhSeries } from './series.js';
 
 /** Pjesa e LHR që përdorin modulet (tipizim minimal, jo i plotë). */
 export interface LhAuditRef {
@@ -60,6 +61,10 @@ export interface LighthouseData {
   entities?: LhEntity[];
   /** Përpjekjet e dështuara para kësaj (bosh kur e para pati sukses) — raportohen, s'fshihen. */
   failedAttempts: LighthouseAttempt[];
+  /** Faza 4: seria e matjeve, kur u planifikuan > 1 (këto të dhëna janë nga matja përfaqësuese). */
+  series?: LhSeries;
+  /** LHR-të e plota të çdo matjeje të vlefshme (vetëm me --save-lhr), për t'u ruajtur veç. */
+  seriesLhrs?: { run: number; lhr: unknown }[];
 }
 
 export interface LhEntity {
@@ -138,11 +143,15 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
   }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'website-auditor-chrome-'));
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | undefined;
+  let launching: Promise<Awaited<ReturnType<typeof chromeLauncher.launch>>> | undefined;
   // Liron Chrome-in, proxy-n dhe profilin e përkohshëm: në fund normalisht, ose menjëherë nëse auditi ndërpritet.
   const release = once(async () => {
     try {
-      await chrome?.kill();
-      await waitForExit(chrome?.process);
+      // Ndërprerja mund të vijë ndërsa Chrome po niset: pritet nisja (me kufi), që të mbyllet ai Chrome
+      // dhe profili të mos mbetet i kyçur në %TEMP%.
+      const c = chrome ?? (launching ? await Promise.race([launching.catch(() => undefined), new Promise<undefined>((r) => setTimeout(r, 10_000))]) : undefined);
+      await c?.kill();
+      await waitForExit(c?.process);
     } catch {
       /* Windows: EPERM gjatë pastrimit të profilit — injorohet */
     }
@@ -157,7 +166,7 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
   });
   const unregister = registerCleanup(release);
   try {
-    chrome = await chromeLauncher.launch({
+    launching = chromeLauncher.launch({
       chromePath: config.lighthouse.chromePath,
       userDataDir,
       // Ctrl+C e trajton motori (runCleanups): liron Chrome-in dhe fshin profilin para daljes.
@@ -172,6 +181,7 @@ async function runLighthouseOnce(url: string, config: AuditConfig): Promise<Omit
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
       ],
     });
+    chrome = await launching;
     // Ndërprerja erdhi ndërsa Chrome po nisej: lirohet menjëherë, pa nisur Lighthouse.
     if (isAborting()) {
       await release();

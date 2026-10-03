@@ -1,3 +1,4 @@
+import type { LhSeries } from '../lighthouse/series.js';
 import type { AuditReport } from './json.js';
 import { groupQualityIssues } from './quality.js';
 import { QUALITY_CATEGORY_LABELS, type QualityCategoryKey } from '../core/schemas.js';
@@ -56,6 +57,14 @@ export function renderTerminal(report: AuditReport, reportPath?: string): string
     if (lhMeta.code && ['NO_NAVSTART', 'NO_TRACING_STARTED'].includes(lhMeta.code)) out.push(yellow("   Gabim i trace-it në Chrome (jo i faqes) — ekzekuto auditin sërish."));
   } else if (lhMeta.failedAttempts?.length) {
     out.push(yellow(` ⚠ Lighthouse: ${lhMeta.failedAttempts.map((f) => `përpjekja ${f.attempt} dështoi (${f.code ?? 'gabim'})`).join(', ')}; rezultati nga përpjekja ${lhMeta.failedAttempts.length + 1}`));
+  }
+  // Faza 4: seria e matjeve — sa të vlefshme, matja përfaqësuese dhe intervali i Performance.
+  const series = (report.lighthouse as { series?: LhSeries }).series;
+  if (series) {
+    const p = series.stats.performance;
+    out.push(` Lighthouse: ${series.valid}/${series.planned} matje të vlefshme${series.representativeRun !== null ? `; pikët nga matja përfaqësuese #${series.representativeRun}` : ''}`);
+    if (p.n) out.push(dim(`   Performance: mediana ${p.median}, min–max ${p.min}–${p.max} (informative; s'hyn në Health)`));
+    if (!series.configConsistent) out.push(yellow(`   ⚠ Konfigurim i ndryshëm brenda serisë: ${series.configNotes.join('; ')}`));
   }
   out.push(`├${line}┤`);
   for (const [k, v] of Object.entries(report.categories) as [CategoryKey, number | null][]) {

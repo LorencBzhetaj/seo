@@ -8,6 +8,7 @@ import { loadConfig, MAX_PAGES_HARD_LIMIT } from './core/config.js';
 import { RobotsBlockedError } from './core/context.js';
 import { executeAudit, type RunStatus } from './core/run.js';
 import { runLighthouse } from './lighthouse/run-lighthouse.js';
+import { MAX_LIGHTHOUSE_RUNS, runLighthouseSeries } from './lighthouse/series.js';
 import { BlockedUrlError } from './net/url-guard.js';
 import { buildReport, writeReport } from './report/json.js';
 import { renderTerminal } from './report/terminal.js';
@@ -38,6 +39,9 @@ Opsione:
   --max-pages <n>         Faqe maksimale për crawl (parazgjedhje 25, maks. 100)
   --max-depth <n>         Thellësia maksimale e linkeve (parazgjedhje 3)
   --chrome-path <path>    Rruga e Chrome/Chromium për Lighthouse
+  --lighthouse-runs <n>   Matje Lighthouse të përsëritura për faqen hyrëse (parazgjedhje 1, maks. 5).
+                          Crawl-i dhe kontrollet e tjera bëhen një herë. Health dhe issue-t vijnë
+                          nga matja përfaqësuese (Performance mediane); mediana/min–max janë informative.
   --save-lhr              Ruaj edhe LHR-në e plotë të Lighthouse në dosjen e raporteve
                           ({raporti}.lhr.json). Mund të përmbajë URL/të dhëna të faqes.
   --ignore-robots         Anashkalo robots.txt për tool-in (vetëm për site që i kontrollon vetë)
@@ -170,6 +174,7 @@ async function main(): Promise<number> {
       'chrome-path': { type: 'string' },
       'ignore-robots': { type: 'boolean', default: false },
       'save-lhr': { type: 'boolean', default: false },
+      'lighthouse-runs': { type: 'string' },
       'no-crawl': { type: 'boolean', default: false },
       'no-business': { type: 'boolean', default: false },
       'no-quality': { type: 'boolean', default: false },
@@ -207,9 +212,11 @@ async function main(): Promise<number> {
   };
   let maxPages: number | undefined;
   let maxDepth: number | undefined;
+  let lhRuns: number | undefined;
   try {
     maxPages = intArg('max-pages', values['max-pages'], 1, MAX_PAGES_HARD_LIMIT);
     maxDepth = intArg('max-depth', values['max-depth'], 0, 10);
+    lhRuns = intArg('lighthouse-runs', values['lighthouse-runs'], 1, MAX_LIGHTHOUSE_RUNS);
   } catch (err) {
     return p.error(2, (err as Error).message);
   }
@@ -233,6 +240,8 @@ async function main(): Promise<number> {
       enabled: values['no-lighthouse'] ? false : base.lighthouse.enabled,
       chromePath: values['chrome-path'] ?? base.lighthouse.chromePath,
       saveLhr: values['save-lhr'] || base.lighthouse.saveLhr,
+      // config.json mund ta japë; kufizohet te 1–5 edhe atje.
+      runs: Math.min(Math.max(1, Math.trunc(lhRuns ?? base.lighthouse.runs ?? 1)), MAX_LIGHTHOUSE_RUNS),
     },
   };
 
@@ -263,7 +272,7 @@ async function main(): Promise<number> {
     const run = await executeAudit(positionals[0]!, config, {
       onStatus: (s) => p.status(s, statusText[s]),
       onStep: (step) => p.step(step),
-      runLighthouse,
+      runLighthouse: (u, cfg) => runLighthouseSeries(u, cfg, runLighthouse, (m) => p.step(m)),
       captureVisual: (targets, cfg) => {
         const host = new URL(targets[0]?.url ?? positionals[0]!).hostname.replace(/[^a-z0-9.-]/gi, '_');
         const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
@@ -277,13 +286,15 @@ async function main(): Promise<number> {
     const report = buildReport(run);
     const lh = run.context?.lighthouse;
     const rawLhr = config.lighthouse.saveLhr && lh?.status === 'ok' ? lh.value.rawLhr : undefined;
+    const seriesLhrs = config.lighthouse.saveLhr && lh?.status === 'ok' ? lh.value.seriesLhrs : undefined;
     if (config.lighthouse.saveLhr && !rawLhr) {
       p.log(`• --save-lhr: LHR s'u ruajt — Lighthouse s'dha rezultat (${lh?.status === 'error' ? lh.error : lh?.status === 'skipped' ? lh.reason : 'pa rezultat'})`);
     }
     await stopIfAborting();
-    const { reportPath: file, lhrPath, report: written } = writeReport(report, path.resolve(config.outputDir), rawLhr);
+    const { reportPath: file, lhrPath, lhrPaths, report: written } = writeReport(report, path.resolve(config.outputDir), rawLhr, seriesLhrs);
     shots?.unregister();
-    if (lhrPath) p.log(`• LHR i plotë (lokal, mos e shpërndaj pa e kontrolluar): ${lhrPath}`);
+    if (lhrPaths?.length) p.log(`• ${lhrPaths.length} LHR të plota, një për çdo matje të vlefshme (lokale, mos i shpërndaj pa i kontrolluar); matja përfaqësuese: ${lhrPath ?? '—'}`);
+    else if (lhrPath) p.log(`• LHR i plotë (lokal, mos e shpërndaj pa e kontrolluar): ${lhrPath}`);
     p.report(file, written.status);
     if (values['progress-json']) return 0;
     if (values.json) console.log(JSON.stringify(written, null, 2));

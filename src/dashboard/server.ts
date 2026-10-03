@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { compareReports } from './compare.js';
 import { compareVisual, pixelDiff, type PixelDiffResult } from './visual-compare.js';
+import { compareSeries, seriesForCompare } from './lh-series.js';
 import { checkFolder, folderRequest, parseRepoForm, parseUrlForm, type AuditRequest } from './forms.js';
 import { JobLimitError, JobManager, type JobManagerOptions } from './jobs.js';
 import { STYLE } from './style.js';
@@ -191,7 +192,9 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         if (!a.ok || !b.ok) return page(404, comparePickerView(list, q, `S'u hap: ${!a.ok ? a.reason : ''} ${!b.ok ? b.reason : ''}`));
         if (q.a === q.b) return page(400, comparePickerView(list, q, 'Zgjidh dy raporte të ndryshme.'));
         const shotFile = (rel: string) => screenshotPath(opts.outputDir, rel);
-        return page(200, compareView(compareReports(q.a, a.report, q.b, b.report), compareVisual(q.a, a.report, q.b, b.report, shotFile)));
+        const sa = seriesForCompare(a.report);
+        const sb = seriesForCompare(b.report);
+        return page(200, compareView(compareReports(q.a, a.report, q.b, b.report), compareVisual(q.a, a.report, q.b, b.report, shotFile), sa && sb ? compareSeries(sa, sb) : null));
       }
       // Krahasimi vizual: e njëjta faqe + pajisje mes dy auditeve; pikselët maten vetëm për çiftin e zgjedhur.
       if (p === '/compare/visual') {

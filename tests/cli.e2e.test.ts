@@ -207,6 +207,72 @@ describe('CLI mbi server lokal (fixture)', () => {
     200_000,
   );
 
+  it('--lighthouse-runs jashtë kufirit 1–5 → exit 2, para çdo kërkese', async () => {
+    for (const n of ['0', '6', '2.5']) {
+      const { code, stderr } = await runCli([`http://${host}/`, '--allow-local', host, '--out', outDir, '--lighthouse-runs', n]);
+      expect(code, n).toBe(2);
+      expect(stderr).toContain('--lighthouse-runs duhet të jetë numër i plotë 1–5');
+    }
+  });
+
+  it.runIf(process.env.RUN_LIGHTHOUSE_TESTS === '1')(
+    'seri me Chrome real: --lighthouse-runs 2 --save-lhr → 2 matje veç, një LHR për secilën; crawl-i dhe kontrollet e tjera një herë',
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'series-lh-'));
+      try {
+        const { code, stdout, stderr } = await runCli([`http://${host}/`, '--allow-local', host, '--lighthouse-runs', '2', '--save-lhr', '--no-visual', '--out', dir, '--json'], 300_000);
+        expect(code, stderr).toBe(0);
+        const report = JSON.parse(stdout) as AuditReport;
+        const lh = report.lighthouse as { lhrFile?: string; series: { planned: number; valid: number; representativeRun: number; configConsistent: boolean; runs: { run: number; status: string; lhrFile?: string; values: { performance: number } }[]; stats: { performance: { n: number } } } };
+        expect(lh.series).toMatchObject({ planned: 2, valid: 2, configConsistent: true });
+        expect(lh.series.stats.performance.n).toBe(2);
+        expect(lh.series.runs.map((r) => r.status)).toEqual(['ok', 'ok']);
+        const rep = lh.series.runs.find((r) => r.run === lh.series.representativeRun)!;
+        // Health/kategoritë = matja përfaqësuese
+        expect(report.categories.performance).toBe(rep.values.performance);
+        expect(lh.lhrFile).toBe(rep.lhrFile);
+        const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+        expect(files.filter((f) => f.endsWith('.lhr.json'))).toEqual(lh.series.runs.map((r) => r.lhrFile).sort());
+        // progresi: secila matje një herë; crawl-i një herë
+        expect(stderr.match(/matja 1\/2/g)).toHaveLength(1);
+        expect(stderr.match(/matja 2\/2/g)).toHaveLength(1);
+        expect(stderr.match(/– crawl \(/g)).toHaveLength(1);
+        expect(stderr).toContain('2 LHR të plota, një për çdo matje të vlefshme');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    320_000,
+  );
+
+  it.runIf(process.env.RUN_LIGHTHOUSE_TESTS === '1')(
+    'anulim gjatë serisë (stdin mbyllet te matja 2/3) → exit 130, pa raport dhe pa LHR',
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'series-cancel-'));
+      const profiles = () => new Set(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('website-auditor-chrome-')));
+      const before = profiles();
+      try {
+        const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', `http://${host}/`, '--allow-local', host, '--lighthouse-runs', '3', '--save-lhr', '--no-visual', '--progress-json', '--exit-with-stdin', '--out', dir], { cwd: ROOT, env: { ...process.env, NO_COLOR: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+        let stderr = '';
+        const code = await new Promise<number>((resolve) => {
+          child.stderr.on('data', (d) => {
+            stderr += d;
+            if (stderr.includes('matja 2/3') && child.stdin.writable) child.stdin.end();
+          });
+          child.on('close', (c) => resolve(c ?? -1));
+        });
+        expect(code, stderr).toBe(130);
+        expect(stderr).not.toContain('matja 3/3');
+        expect(fs.readdirSync(dir).filter((f) => f.endsWith('.json'))).toEqual([]);
+        // anulimi ra ndërsa Chrome i matjes 2 po nisej: as Chrome, as profili s'mbeten
+        expect([...profiles()].filter((p) => !before.has(p))).toEqual([]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    320_000,
+  );
+
   it.runIf(process.env.RUN_LIGHTHOUSE_TESTS === '1')(
     "browser-i i Lighthouse s'arrin localhost / IP metadata (guard proxy)",
     async () => {

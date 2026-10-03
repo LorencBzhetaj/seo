@@ -21,6 +21,8 @@ export interface AuditConfig {
     unavailableReason?: string;
     /** Ruaj LHR-në e plotë lokalisht pranë raportit (--save-lhr). Joaktive si parazgjedhje. */
     saveLhr: boolean;
+    /** Numri i matjeve Lighthouse të planifikuara (--lighthouse-runs, 1–5). Parazgjedhje 1. */
+    runs: number;
   };
   /**
    * Hostet private/lokale të lejuara EKSPLICIT (vetëm për fixtures/teste lokale),
@@ -84,6 +86,7 @@ export const DEFAULT_CONFIG: AuditConfig = {
     formFactor: 'mobile',
     maxWaitForLoad: 45_000,
     saveLhr: false,
+    runs: 1,
   },
   allowedPrivateHosts: [],
   outputDir: 'output',

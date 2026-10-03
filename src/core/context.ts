@@ -7,6 +7,7 @@ import { assertUrlAllowed, BlockedUrlError, isExplicitlyAllowed, normalizeInputU
 import { isAllowed, parseRobots, type ParsedRobots } from '../parse/robots.js';
 import { parseHtml, type ParsedHtml } from '../parse/html.js';
 import type { LighthouseData } from '../lighthouse/run-lighthouse.js';
+import type { LhSeries } from '../lighthouse/series.js';
 import type { DetectionData } from '../detection/index.js';
 import type { VisualData } from '../visual/capture.js';
 import { classifyAccess, isHtml, isSuccess, type AccessInfo } from './access.js';
@@ -40,6 +41,8 @@ export interface AuditContext {
   sitemaps: Probe<SitemapData>;
   crawl: Probe<CrawlResult>;
   lighthouse: Probe<LighthouseData>;
+  /** Faza 4: seria e matjeve Lighthouse (edhe kur asnjë matje s'dha rezultat). */
+  lighthouseSeries?: LhSeries;
   /** MVP-3: lloji i sitit/faqeve dhe CMS-i — llogariten nga të dhënat e mësipërme, pa rrjet. */
   detection?: DetectionData;
   /** Faqe përfaqësuese të renderuara (desktop + mobile) për identitetin vizual; mungon kur s'kërkohet. */
@@ -187,14 +190,25 @@ export async function collectContext(input: string, config: AuditConfig, hooks: 
 
   // 8. Lighthouse mobile për faqen hyrëse
   let lighthouse: Probe<LighthouseData>;
+  let lighthouseSeries: LhSeries | undefined;
   if (!config.lighthouse.enabled) lighthouse = { status: 'skipped', reason: 'Lighthouse u çaktivizua (--no-lighthouse)' };
   else if (config.lighthouse.unavailableReason) lighthouse = { status: 'skipped', reason: config.lighthouse.unavailableReason };
   else if (main.status !== 'ok') lighthouse = { status: 'skipped', reason: 'Faqja hyrëse s\'u arrit; Lighthouse s\'u ekzekutua' };
   else if (!hooks.runLighthouse) lighthouse = { status: 'skipped', reason: 'Runner i Lighthouse mungon' };
   else {
-    step('Lighthouse (mobile)');
-    lighthouse = await probe(() => hooks.runLighthouse!(url.href, config));
+    step(config.lighthouse.runs > 1 ? `Lighthouse (mobile): ${config.lighthouse.runs} matje` : 'Lighthouse (mobile)');
+    lighthouse = await probe(async () => {
+      try {
+        const v = await hooks.runLighthouse!(url.href, config);
+        lighthouseSeries = v.series;
+        return v;
+      } catch (err) {
+        // Seria ruhet edhe kur asnjë matje s'dha rezultat: raporti tregon çfarë dështoi, pa shpikur vlera.
+        lighthouseSeries = (err as { series?: LhSeries }).series;
+        throw err;
+      }
+    });
   }
 
-  return { url: url.href, config, robots, main, access, html, httpVariant, tls, canonicalTarget, sitemaps, crawl, lighthouse };
+  return { url: url.href, config, robots, main, access, html, httpVariant, tls, canonicalTarget, sitemaps, crawl, lighthouse, ...(lighthouseSeries ? { lighthouseSeries } : {}) };
 }

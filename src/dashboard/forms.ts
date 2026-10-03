@@ -18,9 +18,11 @@ export interface AuditRequest {
 
 export type Parsed = { ok: true; value: AuditRequest } | { ok: false; errors: string[] };
 
-export const URL_DEFAULTS = { maxPages: 25, maxDepth: 3, lighthouse: true, crawl: true, business: true, quality: true, visual: true, saveLhr: false, ignoreRobots: false };
+export const URL_DEFAULTS = { maxPages: 25, maxDepth: 3, lighthouseRuns: 1, lighthouse: true, crawl: true, business: true, quality: true, visual: true, saveLhr: false, ignoreRobots: false };
 export const MAX_PAGES = 100;
 export const MAX_DEPTH = 10;
+/** I njëjti kufi si te motori (MAX_LIGHTHOUSE_RUNS); dashboard-i s'e importon motorin. */
+export const MAX_LH_RUNS = 5;
 
 type Form = Record<string, string | undefined>;
 const on = (f: Form, k: string) => f[k] === 'on' || f[k] === '1';
@@ -50,6 +52,7 @@ export function parseUrlForm(f: Form): Parsed {
   if (raw.length > 2048) errors.push('URL-ja është tepër e gjatë.');
   const maxPages = int(f.maxPages, URL_DEFAULTS.maxPages, 1, MAX_PAGES, 'Faqet maksimale', errors);
   const maxDepth = int(f.maxDepth, URL_DEFAULTS.maxDepth, 0, MAX_DEPTH, 'Thellësia', errors);
+  const lhRuns = int(f.lighthouseRuns, URL_DEFAULTS.lighthouseRuns, 1, MAX_LH_RUNS, 'Matjet Lighthouse', errors);
   if (errors.length || !url) return { ok: false, errors };
   const lighthouse = on(f, 'lighthouse');
   const crawl = on(f, 'crawl');
@@ -59,7 +62,7 @@ export function parseUrlForm(f: Form): Parsed {
   const target = url.href;
   const args = [
     ...(crawl ? ['--max-pages', String(maxPages), '--max-depth', String(maxDepth)] : ['--no-crawl']),
-    ...(lighthouse ? [] : ['--no-lighthouse']),
+    ...(lighthouse ? (lhRuns > 1 ? ['--lighthouse-runs', String(lhRuns)] : []) : ['--no-lighthouse']),
     ...(business ? [] : ['--no-business']),
     ...(quality ? [] : ['--no-quality']),
     ...(quality && !visual ? ['--no-visual'] : []),
@@ -70,7 +73,7 @@ export function parseUrlForm(f: Form): Parsed {
   ];
   const options = [
     crawl ? `crawl: maks. ${maxPages} faqe, thellësi ${maxDepth}` : 'pa crawl (vetëm faqja hyrëse)',
-    lighthouse ? 'Lighthouse mobile' : 'pa Lighthouse',
+    lighthouse ? (lhRuns > 1 ? `Lighthouse mobile: ${lhRuns} matje` : 'Lighthouse mobile: 1 matje') : 'pa Lighthouse',
     business ? 'biznes & privatësi' : 'pa biznes',
     quality ? (visual ? 'cilësia + pamja (desktop/mobile)' : 'cilësia (pa renderim)') : 'pa cilësi',
     ...(on(f, 'saveLhr') && lighthouse ? ['ruaj LHR'] : []),
