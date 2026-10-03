@@ -45,9 +45,13 @@ pre,.ev{background:var(--code);border-radius:6px;padding:8px 10px;font:12px/1.45
 ul.plain{margin:6px 0;padding-left:18px}
 form.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
 form.filters label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
-select,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);max-width:420px}
+select,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);max-width:min(420px,100%)}
+form.filters input{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px;max-width:100%}
 button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
 label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin:8px 0}
+label.field textarea{font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+a.button{display:inline-block;background:var(--accent);color:#fff;border-radius:6px;padding:8px 14px;text-decoration:none;font-weight:600}
+ol.steps{padding-left:22px}ol.steps li{margin:4px 0}
 label.field input{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
 .row{display:flex;gap:12px}.row label.field{flex:1}
 label.check{display:block;font-size:14px;margin:5px 0}label.check input{margin-right:6px}
@@ -80,5 +84,23 @@ figure.cmp img{display:block;width:100%;height:auto;max-height:80vh;object-fit:c
 .ovl{position:relative;border:1px solid var(--line);border-radius:8px;overflow-x:hidden;overflow-y:auto;max-height:60vh;background:#000}.ovl.mobile{max-width:430px}
 .ovl img{display:block;width:100%;height:auto}.ovl img.top{position:absolute;top:0;left:0;mix-blend-mode:difference}
 @media (max-width:900px){.viewer{grid-template-columns:1fr}.cmp-grid,.cmp-grid.mobile{grid-template-columns:1fr}}
-@media (max-width:700px){main{padding:12px}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}.ev,pre{max-width:calc(100vw - 60px)}header.top{padding:10px 12px}th:nth-child(n+6),td:nth-child(n+6){display:none}}
+@media (max-width:700px){main{padding:12px}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}.ev,pre{max-width:calc(100vw - 60px)}header.top{padding:10px 12px}table:not(.keep) th:nth-child(n+6),table:not(.keep) td:nth-child(n+6){display:none}form.filters label,form.filters select,form.filters input{width:100%}}
+/* Faza 5: gjendjet, kartat e totalit, tabelat e gjata, fokusi nga tastiera */
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:4px}
+details>summary:focus-visible{outline-offset:-3px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+p.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:8px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
+.card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.card .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.25}.card .v.none{font-size:14px;font-weight:600;color:var(--warn)}
+h2.cards-title{margin:14px 0 0}.code.big{font-size:inherit;color:var(--text)}
+.tablewrap{overflow-x:auto;max-width:100%;position:relative}td.url{overflow-wrap:anywhere;min-width:12ch}tr.sum td{font-weight:650}
+details.panel>summary{cursor:pointer;list-style:none}details.panel>summary::-webkit-details-marker{display:none}
+details.panel>summary h2{display:inline;margin:0}details.panel>summary::before{content:"▸ ";color:var(--muted)}details.panel[open]>summary::before{content:"▾ "}
+details.panel[open]>summary{margin-bottom:10px}
+details.setup>summary{cursor:pointer;list-style:none}details.setup>summary::-webkit-details-marker{display:none}details.setup>summary h2{display:inline}
+nav.pager{display:flex;gap:16px;align-items:center;margin-top:8px;flex-wrap:wrap}
+p.counts strong{color:var(--text)}
+@media (max-width:700px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card .v{font-size:20px}.tablewrap>table{min-width:560px}.tablewrap{border:1px solid var(--line);border-radius:6px}}
 `;

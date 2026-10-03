@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startDashboard } from '../dashboard/server.js';
+import { GscStore } from '../dashboard/gsc-store.js';
 import { clearOwnTemp } from '../core/cleanup.js';
 import { installShutdown } from '../dashboard/shutdown.js';
 import { DEFAULT_PORT, instanceOnPort, PORT_TRIES } from './instance.js';
@@ -16,6 +17,7 @@ import { DEFAULT_PORT, instanceOnPort, PORT_TRIES } from './instance.js';
  * Dosja e të dhënave (e shkrueshme nga përdoruesi): %LOCALAPPDATA%\SEO Tool (ose SEO_TOOL_DATA):
  *   output\   raportet, LHR dhe screenshot-et
  *   tmp\      skedarët e përkohshëm të auditeve (profilet e Chrome, klonet e repo-ve)
+ *   gsc      Search Console: klienti OAuth dhe token-at (DPAPI) dhe periudhat e marra
  *   config.json (opsional)
  */
 export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -52,7 +54,8 @@ async function main(): Promise<void> {
       return;
     }
     try {
-      const { url, server, jobs } = await startDashboard({ outputDir, port });
+      // GSC në dosjen e të dhënave të përdoruesit, jo te TEMP (që më sipër u kthye te tmp dhe pastrohet).
+      const { url, server, jobs } = await startDashboard({ outputDir, port, gsc: { store: new GscStore(path.join(data, 'gsc')) } });
       installShutdown(server, jobs);
       // S'ka instancë tjetër me këtë dosje: çdo gjë te tmp është mbetje e një ndalimi të detyruar.
       const leftovers = clearOwnTemp(tmp);

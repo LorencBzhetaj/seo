@@ -15,6 +15,11 @@ import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsFo
 import { findBrowser, type BrowserLookup } from '../core/browser.js';
 import { gitAvailable } from '../core/git.js';
 import { loadConfig } from '../core/config.js';
+import { displayDir, GscStore, maskClientId, parseClientJson, redactSecrets as redactSecretsSafe } from './gsc-store.js';
+import { buildAuthRequest, checkState, exchangeCode, GscClient, GscError, revokeToken, type FetchFn, type GscSite, type PendingAuth } from './gsc-api.js';
+import { datasetsForReport, fetchDataset, indexDataset, latestFinalDate, presetPeriod, validatePeriod, crawlMatch, type GscDataset } from './gsc-model.js';
+import { connectBody, datasetBody, gscBody, type GscViewState } from './views-gsc.js';
+import { layout } from './views.js';
 import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, tasksView, urlReportView, visualCompareView, type Files, type Query } from './views.js';
 
 /**
@@ -52,7 +57,26 @@ export interface DashboardOptions {
   openFolder?: (dir: string) => void;
   /** Opsione të punëve (kufiri, komanda për teste, hoste lokale për fixtures). */
   jobs?: Omit<JobManagerOptions, 'outputDir'>;
+  /** Search Console (faza 5): ruajtja dhe fetch-i (testet japin store në dosje të përkohshme dhe fetch të simuluar). */
+  gsc?: { store?: GscStore; fetch?: FetchFn; now?: () => Date; /** Google i simuluar: çdo faqe dhe periudhë etiketohet "Demo". */ demo?: boolean };
 }
+
+/** Mesazhet e faqes GSC sipas kodit (s'pasqyrohet tekst arbitrar nga URL-ja). */
+const GSC_MESSAGES: Record<string, string> = {
+  imported: 'Klienti OAuth u importua dhe u ruajt i mbrojtur.',
+  connected: 'Llogaria Google u lidh (vetëm lexim i Search Console).',
+  // "u revokua" thuhet vetëm kur Google e konfirmoi kërkesën e revokimit (HTTP 200).
+  disconnected: 'Llogaria u shkëput: Google konfirmoi revokimin e token-it dhe token-i u fshi nga ky kompjuter.',
+  'disconnected-local': "Kredencialet lokale (token-i) u fshinë nga ky kompjuter, por revokimi te Google NUK u konfirmua (token-i mund të ishte tashmë i pavlefshëm, ose kërkesa dështoi). Kontrollo dhe hiq aksesin te myaccount.google.com/permissions.",
+  'disconnected-none': "S'kishte token të ruajtur në këtë kompjuter; s'u dërgua asnjë kërkesë revokimi te Google.",
+  'data-deleted': 'Të dhënat e ruajtura të Search Console u fshinë.',
+  'all-deleted': 'U fshi gjithçka e Search Console në këtë kompjuter (klienti, token-i, të dhënat). Google konfirmoi revokimin e token-it.',
+  'all-deleted-local': "U fshi gjithçka e Search Console në këtë kompjuter (klienti, token-i, të dhënat), por revokimi te Google NUK u konfirmua. Kontrollo dhe hiq aksesin te myaccount.google.com/permissions.",
+  'all-deleted-none': "U fshi gjithçka e Search Console në këtë kompjuter (klienti, të dhënat). S'kishte token të lexueshëm, prandaj s'u dërgua kërkesë revokimi te Google.",
+};
+const GSC_ERRORS: Record<string, string> = {
+  denied: 'Lidhja u anulua te Google (s\'u dha leja).',
+};
 
 export interface Dashboard {
   server: http.Server;
@@ -98,6 +122,15 @@ function readBody(req: http.IncomingMessage): Promise<string | undefined> {
 
 export function createDashboard(opts: DashboardOptions): Dashboard {
   const jobs = new JobManager({ ...opts.jobs, outputDir: opts.outputDir });
+  // Search Console: sekretet në dosjen e përdoruesit (DPAPI në Windows), jashtë output/ dhe Git.
+  const gscStore = opts.gsc?.store ?? new GscStore();
+  const gscFetch: FetchFn = opts.gsc?.fetch ?? ((url, init) => fetch(url, init));
+  const gscNow = opts.gsc?.now ?? (() => new Date());
+  const gscDemo = opts.gsc?.demo === true;
+  const gscApi = new GscClient(gscStore, gscFetch, () => gscNow().getTime());
+  // Gjendja e lidhjes OAuth në pritje: vetëm në memorie, një përdorim, 10 minuta.
+  let pendingAuth: PendingAuth | undefined;
+  const gscErrorText = (e: unknown) => (e instanceof GscError ? e.message : `Gabim: ${redactSecretsSafe((e as Error)?.message ?? String(e))}`);
   const csrf = crypto.randomBytes(32).toString('base64url');
   const instanceId = dashboardInstanceId(opts.outputDir);
   const configPath = path.resolve('config.json');
@@ -142,6 +175,7 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         if (body === undefined) return text(413, 'Kërkesë tepër e madhe');
         const form = Object.fromEntries(new URLSearchParams(body));
         if (!safeEqual(form.token ?? '', csrf)) return text(403, 'Kërkesa u refuzua: token i pavlefshëm (rifresko faqen)');
+        if (p.startsWith('/gsc/')) return await handleGscPost(p, form);
         return handlePost(p, form);
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, 'text/plain; charset=utf-8', 'Metodë e palejuar', { Allow: 'GET, HEAD, POST' });
@@ -153,6 +187,37 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
       };
 
       if (p === '/') return page(200, listView(listReports(opts.outputDir), openReportsForm(csrf, '/')));
+      // --- Search Console (vetëm lexim) ---
+      if (p === '/gsc') return page(200, layout('Search Console', gscBody(await gscState({ message: GSC_MESSAGES[q.msg ?? ''], error: GSC_ERRORS[q.err ?? ''] }))));
+      if (p === '/gsc/callback') {
+        if (q.error) {
+          pendingAuth = undefined;
+          return redirect('/gsc?err=denied');
+        }
+        const bad = checkState(pendingAuth, q.state);
+        if (bad) return page(400, layout('Search Console', gscBody(await gscState({ error: bad }))));
+        const pending = pendingAuth!;
+        pendingAuth = undefined; // një përdorim
+        try {
+          const client = gscStore.loadClient();
+          if (!client) throw new GscError("Klienti OAuth s'është importuar.", 'not-configured');
+          gscStore.saveToken(await exchangeCode(gscFetch, client, pending, q.code ?? '', gscNow().getTime()));
+          return redirect('/gsc?msg=connected');
+        } catch (e) {
+          return page(400, layout('Search Console', gscBody(await gscState({ error: gscErrorText(e) }))));
+        }
+      }
+      const gd = p.match(/^\/gsc\/data\/([a-f0-9]{16})$/);
+      if (gd) {
+        const ds = gscStore.loadDataset<GscDataset>(gd[1]!);
+        if (!ds) return page(404, errorView("S'u gjet", 'Kjo periudhë e Search Console s\'ekziston (mund të jetë fshirë).'));
+        let match;
+        if (q.report) {
+          const rr = readReport(opts.outputDir, q.report);
+          if (rr.ok && kindOf(rr.report) === 'url') match = { report: q.report, m: crawlMatch(rr.report, indexDataset(ds)) };
+        }
+        return page(200, layout(`GSC · ${ds.property}`, datasetBody(ds, { page: q.page, query: q.query, pp: q.pp, qp: q.qp, n: q.n }, match, hasToken())));
+      }
       if (p === '/style.css') return send(200, 'text/css; charset=utf-8', STYLE);
       if (p === '/audit') return page(200, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, {}, auditEnv()));
       if (p === '/jobs') return page(200, jobsListView(jobs.list(), jobs.maxConcurrent));
@@ -167,7 +232,9 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         const r = readReport(opts.outputDir, name);
         if (!r.ok) return page(404, errorView("Raporti s'u hap", r.reason));
         if (kindOf(r.report) !== 'url') return page(404, errorView('Pa detyra', 'Auditet e skedarëve kanë gjetjet e tyre me path:line; detyrat vlejnë për raportet URL.'));
-        return page(200, tasksView(name, r.report));
+        const datasets = datasetsForReport(r.report, gscStore.listDatasets<GscDataset>());
+        const chosen = q.gsc === 'none' ? undefined : (datasets.find((d) => d.id === q.gsc) ?? datasets[0]);
+        return page(200, tasksView(name, r.report, { datasets, selected: chosen ? indexDataset(chosen) : null, rank: q.rank === 'gsc' ? 'gsc' : 'technical', report: r.report, connected: hasToken() }, { area: q.area, sev: q.sev }));
       }
       // Galeria e pamjeve: /report/<emri>/visual (emri validohet si çdo raport; imazhet vetëm përmes /shot/)
       const gal = p.match(/^\/report\/([^/]+)\/visual$/);
@@ -240,6 +307,111 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
       } catch (e) {
         if (e instanceof JobLimitError) return page(429, auditFormsView(csrf, jobs.running(), jobs.maxConcurrent, { ...formState, errors: [e.message] }, auditEnv()));
         throw e;
+      }
+    }
+
+    /** A ka token të ruajtur e të lexueshëm (pa thirrje te Google). */
+    function hasToken(): boolean {
+      try {
+        return !!gscStore.loadToken();
+      } catch {
+        return false;
+      }
+    }
+
+    async function gscState(extra: Partial<GscViewState> = {}): Promise<GscViewState> {
+      const state: GscViewState = { csrf, dir: displayDir(gscStore.dir), protection: gscStore.protector.kind, demo: gscDemo, datasets: [], ...extra };
+      try {
+        const c = gscStore.loadClient();
+        if (c) state.client = { clientId: maskClientId(c.clientId), projectId: c.projectId };
+        const t = gscStore.loadToken();
+        if (t) state.token = { connectedAt: t.connectedAt, scope: t.scope };
+        state.datasets = gscStore.listDatasets<GscDataset>();
+        state.lastRevoke = gscStore.loadRevokeResult();
+      } catch (e) {
+        state.error = state.error ?? gscErrorText(e);
+      }
+      if (state.token) {
+        try {
+          state.sites = await gscApi.listSites();
+        } catch (e) {
+          state.sitesError = gscErrorText(e);
+          if (e instanceof GscError && e.kind === 'reconnect') state.token = undefined;
+        }
+      }
+      return state;
+    }
+
+    /** Revokimi i token-it të ruajtur: '' = Google e konfirmoi, '-local' = s'u konfirmua, '-none' = s'kishte token të lexueshëm. */
+    async function revokeStored(): Promise<'' | '-local' | '-none'> {
+      let t;
+      try {
+        t = gscStore.loadToken();
+      } catch {
+        // I palexueshëm (p.sh. tjetër përdorues Windows): s'ka çfarë t'i dërgohet Google-it; fshihet lokalisht.
+        t = undefined;
+      }
+      if (!t) return '-none';
+      const r = await revokeToken(gscFetch, t);
+      // Përgjigjja e Google ruhet (pa token) që të verifikohet më vonë te faqja GSC; "Fshi gjithçka" e heq bashkë me dosjen.
+      gscStore.saveRevokeResult({ at: gscNow().toISOString(), confirmed: r.revoked, httpStatus: r.httpStatus, error: r.error });
+      return r.revoked ? '' : '-local';
+    }
+
+    async function handleGscPost(p: string, form: Record<string, string>) {
+      const fail = async (status: number, error: string) => page(status, layout('Search Console', gscBody(await gscState({ error }))));
+      try {
+        if (p === '/gsc/client') {
+          const parsed = parseClientJson(form.json ?? '');
+          if (!parsed.ok) return await fail(400, parsed.error);
+          gscStore.saveClient(parsed.client);
+          return redirect('/gsc?msg=imported');
+        }
+        if (p === '/gsc/connect') {
+          const client = gscStore.loadClient();
+          if (!client) return await fail(400, 'Importo fillimisht klientin OAuth.');
+          const port = (server.address() as AddressInfo).port;
+          const { url, pending } = buildAuthRequest(client, `http://${LOOPBACK}:${port}/gsc/callback`, gscNow().getTime());
+          pendingAuth = pending;
+          return page(200, layout('Lidhja me Google', connectBody(url, gscDemo)));
+        }
+        if (p === '/gsc/disconnect') {
+          const r = await revokeStored();
+          gscStore.deleteToken();
+          return redirect(`/gsc?msg=disconnected${r}`);
+        }
+        if (p === '/gsc/delete-data') {
+          gscStore.deleteDatasets();
+          return redirect('/gsc?msg=data-deleted');
+        }
+        if (p === '/gsc/delete-all') {
+          const r = await revokeStored();
+          gscStore.deleteAll();
+          return redirect(`/gsc?msg=all-deleted${r}`);
+        }
+        if (p === '/gsc/fetch') {
+          // Property duhet të jetë nga lista e llogarisë (s'pranohet vlerë arbitrare).
+          const sites: GscSite[] = await gscApi.listSites();
+          const site = sites.find((x) => x.siteUrl === form.property);
+          if (!site) return await fail(400, 'Property e panjohur për këtë llogari.');
+          const latest = await latestFinalDate(gscApi, site.siteUrl, gscNow());
+          let period: { startDate: string; endDate: string };
+          if (form.preset === 'custom') period = { startDate: (form.start ?? '').trim(), endDate: (form.end ?? '').trim() };
+          else {
+            const days = Number(form.preset);
+            if (![7, 28, 90].includes(days)) return await fail(400, 'Periudhë e pavlefshme.');
+            if (!latest) return await fail(400, `Property ${site.siteUrl} s'ka të dhëna përfundimtare në 10 ditët e fundit; zgjidh periudhë të dhënë me data.`);
+            period = presetPeriod(days, latest);
+          }
+          const bad = validatePeriod(period.startDate, period.endDate, latest, gscNow());
+          if (bad) return await fail(400, bad);
+          const ds = await fetchDataset(gscApi, site, period.startDate, period.endDate, latest, gscNow(), gscDemo);
+          gscStore.saveDataset(ds);
+          return redirect(`/gsc/data/${ds.id}`);
+        }
+        return page(404, errorView('S\'u gjet', 'Ky veprim s\'ekziston.'));
+      } catch (e) {
+        return await fail(e instanceof GscError && e.kind === 'invalid' ? 400 : 502, gscErrorText(e));
       }
     }
 

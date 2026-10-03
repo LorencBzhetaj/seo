@@ -133,7 +133,7 @@ export interface TaskList {
 
 export const RANKING_NOTE =
   'Renditja: rëndësia → gjetjet e konfirmuara para atyre që kërkojnë verifikim → numri i faqeve të prekura → prioriteti i motorit. ' +
-  "Numri i faqeve tregon shtrirjen brenda faqeve të kontrolluara; s'është masë e trafikut apo e renditjes në kërkim (mjeti s'ka të dhëna Search Console) dhe asnjë detyrë s'garanton fitim SEO.";
+  "Numri i faqeve tregon shtrirjen brenda faqeve të kontrolluara; s'është masë e trafikut apo e renditjes në kërkim dhe asnjë detyrë s'garanton fitim SEO.";
 
 export function coverageOf(r: Obj): Coverage {
   const site = obj(r.site);

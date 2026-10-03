@@ -10,7 +10,7 @@ import { visualCompareBody, visualComparePanel } from './views-visual-compare.js
 import { buildTasks } from './tasks.js';
 import { seriesOf, type SeriesCompare } from './lh-series.js';
 import { seriesComparePanel, seriesPanel } from './views-series.js';
-import { blockedWarning, tasksBody, tasksHref, tasksPanel } from './views-tasks.js';
+import { blockedWarning, tasksBody, tasksHref, tasksPanel, type TasksFilter, type TasksGsc } from './views-tasks.js';
 
 /** Qasja te skedarët lokalë (screenshot, LHR): vetëm kontroll ekzistence, pa lexim përmbajtjeje. */
 export interface Files {
@@ -47,8 +47,8 @@ export function layout(title: string, body: SafeHtml, refreshSeconds?: number): 
   return html`<!doctype html>
 <html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="same-origin">${refreshSeconds ? html`<meta http-equiv="refresh" content="${refreshSeconds}">` : ''}<title>${title} · SEO Tool</title><link rel="stylesheet" href="/style.css"></head>
-<body><header class="top"><span class="brand">SEO Tool · Dashboard</span><nav><a href="/">Raportet</a><a href="/audit">Nis audit</a><a href="/jobs">Punët</a><a href="/compare">Krahaso</a></nav>
-<span class="local">vetëm lokal · 127.0.0.1 · pa llogari, pa cloud</span></header>
+<body><header class="top"><span class="brand">SEO Tool · Dashboard</span><nav><a href="/">Raportet</a><a href="/audit">Nis audit</a><a href="/jobs">Punët</a><a href="/compare">Krahaso</a><a href="/gsc">Search Console</a></nav>
+<span class="local">vetëm lokal · 127.0.0.1 · pa llogari dhe pa server të SEO Tool</span></header>
 <main>${body}</main></body></html>`.value;
 }
 
@@ -410,9 +410,9 @@ export function visualCompareView(c: VisualCompare, q: Query, diff?: PixelDiffRe
   return layout(`Krahasimi vizual · ${c.sa.target}`, visualCompareBody(c, q, diff));
 }
 
-export function tasksView(file: string, r: Obj): string {
+export function tasksView(file: string, r: Obj, gsc?: TasksGsc, filter?: TasksFilter): string {
   const s = summarize(file, r);
-  return layout(`Detyrat · ${s.target}`, tasksBody(file, s.target, buildTasks(r, urlIssues(r))));
+  return layout(`Detyrat · ${s.target}`, tasksBody(file, s.target, buildTasks(r, urlIssues(r)), gsc, filter));
 }
 
 export function galleryView(file: string, r: Obj, q: Query, files: Files): string {

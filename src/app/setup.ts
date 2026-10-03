@@ -403,7 +403,8 @@ export async function uninstall(opts: { yes: boolean; deleteData?: boolean }): P
     if (!(await io.ask(`Të çinstalohet ${APP_NAME} nga ${dir}?`, true))) return 1;
     let deleteData = opts.deleteData ?? false;
     if (opts.deleteData === undefined && !opts.yes && fs.existsSync(dataDir)) {
-      console.log(`Raportet, screenshot-et dhe konfigurimi janë te: ${dataDir}`);
+      console.log(`Raportet, screenshot-et, konfigurimi dhe lidhja me Search Console (gsc\\) janë te: ${dataDir}`);
+      console.log(`Fshirja s'e revokon token-in te Google: për këtë përdor "Shkëput llogarinë" në dashboard para çinstalimit.`);
       deleteData = await io.ask('Të fshihen edhe ato? (parazgjedhje: JO, mbeten në kompjuter)', false);
     }
 

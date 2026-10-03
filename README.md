@@ -48,6 +48,7 @@ Paketa `SEO-Tool-<version>-windows-x64.zip` përmban Node.js-in (i nënshkruar n
 - `output\`: raportet, LHR dhe screenshot-et;
 - `config.json` (opsional, p.sh. `{"lighthouse": {"chromePath": "C:\\…\\chrome.exe"}}`);
 - `tmp\`: skedarët e përkohshëm të auditeve (profilet e Chrome, klonet). Çdo hapje e programit e zbraz.
+- `gsc\`: Search Console — klienti OAuth dhe token-at (të enkriptuar me DPAPI) dhe periudhat e marra. S'preket nga përditësimi.
 
 **Përditësimi:**
 - Nxirre versionin e ri **mbi të njëjtën dosje** (zëvendëso skedarët) ose në një dosje të re, pastaj hap `Instalo.cmd`.
@@ -403,6 +404,47 @@ Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`
   Çdo çift del **krahasim i plotë**, **krahasim me kufizime** (p.sh. raport i vjetër pa këto metadata, screenshot i prerë, Chrome tjetër, ridrejtim i ndryshëm) ose **s'krahasohet** (gjerësi/DPR e ndryshme, skedar që mungon ose s'përputhet me raportin, faqe e kapur vetëm në njërin audit). Për çiftin e zgjedhur jepen tabela e verifikimit, **përqindja e pikselëve me diferencë mbi tolerancën 40/255** në të paktën një kanal ngjyre, në zonën e përbashkët (me brezat 200 px ku përqendrohet ndryshimi dhe diferencën më të madhe të një kanali), pamjet krah për krah dhe një mbivendosje "diferencë" (CSS, pa JavaScript, me lartësi të kufizuar dhe lidhje te pamjet origjinale). Te mbivendosja, e zeza do të thotë ngjyrë e njëjtë në A dhe B; gri e errët janë diferenca të vogla (zakonisht zhurmë JPEG, që s'numërohen); zonat e ndriçuara janë ndryshime. Kur viewport-i i njërit raport s'dihet (raport i vjetër), matja shënohet **matje orientuese**: tregon drejtimin, jo një krahasim të verifikuar. Matja s'është vlerësim "më mirë/më keq", s'hyn në Health dhe mund të ndikohet nga përmbajtje dinamike. Toleranca 40/255 për zhurmën e JPEG dhe brezat janë provizore.
 
   > **Pragjet janë provizore dhe të pakalibruara:** ±5 pikë për variacionin e Lighthouse dhe ≥ 90% faqe të përbashkëta që crawl-i të krahasohet. Pamja e krahasimit e thotë këtë në krye. Mund të ndryshojnë pasi të ketë më shumë ekzekutime të përsëritura të të njëjtit sit.
+
+### Google Search Console (vetëm lexim)
+
+Faqja **Search Console** (`/gsc`) lidh dashboard-in me llogarinë tënde Google dhe lexon klikimet, impressions, CTR dhe pozicionin mesatar sipas faqeve dhe kërkimeve. Leja e vetme që kërkohet është `https://www.googleapis.com/auth/webmasters.readonly` ("View Search Console data"): mjeti nuk mund të ndryshojë asgjë në Search Console. Të dhënat merren direkt nga Google në këtë kompjuter dhe nuk dërgohen askund tjetër.
+
+**Konfigurimi (një herë, e bën vetë përdoruesi):**
+1. Te Google Cloud Console krijo një projekt dhe aktivizo **Google Search Console API**.
+2. Te **Google Auth Platform** (OAuth consent screen), zgjidh Audience **External** dhe statusin **Testing**. Shto veten te "Test users". Te "Data access" shto vetëm `…/auth/webmasters.readonly`.
+3. Krijo **OAuth client** të tipit **Desktop app** dhe shkarko JSON-in. Ngjite përmbajtjen te `/gsc` → **Importo klientin**.
+4. Kliko **Lidh llogarinë Google** → **Vazhdo te Google**. Google kthen te `http://127.0.0.1:<porti>/gsc/callback`: redirect loopback, me PKCE S256 dhe `state` që vlen një herë dhe 10 minuta. Te projekti yt në Testing mund të shfaqet "Google hasn't verified this app"; aplikacioni je vetë ti.
+5. Në statusin **Testing**, Google e skadon autorizimin pas **7 ditësh**. Pas kësaj, dashboard-i kërkon lidhje të re.
+
+**Ruajtja:**
+- Klienti OAuth dhe token-at ruhen te `%LOCALAPPDATA%\SEO Tool\gsc`, jashtë Git dhe jashtë dosjes së raporteve, të enkriptuar me **Windows DPAPI (CurrentUser)**: vetëm i njëjti përdorues Windows në këtë kompjuter i lexon.
+- Në sisteme të tjera përdoret `~/.seo-tool/gsc` me leje 0600, pa enkriptim; dashboard-i e thotë këtë.
+- Programi i instaluar përdor `gsc` brenda dosjes së tij të të dhënave (`%LOCALAPPDATA%\SEO Tool`, ose `SEO_TOOL_DATA`), kurrë dosjen e përkohshme. Dosja mund të ndryshohet me variablin `SEO_TOOL_GSC_DIR`. Faqja e shfaq shtegun pa emrin e përdoruesit (`%LOCALAPPDATA%\…`).
+- Çinstalimi me fshirje të të dhënave e heq edhe `gsc`, por nuk e revokon token-in te Google: përdor më parë **Shkëput llogarinë**.
+- Token-at nuk shkruhen në raporte, log-e apo faqe; `client_id` shfaqet i shkurtuar.
+- **Shkëput llogarinë** i kërkon Google-it revokimin e token-it dhe e fshin token-in lokalisht. Mesazhi thotë "Google konfirmoi revokimin" vetëm kur Google kthen sukses; përndryshe thotë që kredencialet lokale u fshinë, por revokimi nuk u konfirmua (kontrollo te myaccount.google.com/permissions). Përgjigjja e Google (statusi HTTP dhe kodi i gabimit, pa token) ruhet te `gsc/revoke.json` dhe shfaqet te "Shkëputja e fundit". Periudhat e ruajtura mbeten pas shkëputjes dhe hapen pa lidhje. **Fshi të dhënat e GSC** heq periudhat e ruajtura. **Fshi gjithçka të GSC** heq edhe klientin.
+
+**Të dhënat dhe kufijtë:**
+- Property zgjidhet nga lista e llogarisë; nuk pranohet vlerë arbitrare.
+- Periudha: 7, 28 ose 90 ditët e fundit, ose data të zgjedhura (YYYY-MM-DD, ora e Paqësorit). Fundi i periudhës nuk mund të jetë pas datës së fundit me të dhëna përfundimtare, që gjendet automatikisht; të dhënat vonohen zakonisht 2–3 ditë. Fillimi nuk mund të jetë më i vjetër se rreth 16 muaj.
+- Kërkesa përdor llojin `web` dhe `dataState: final`, pa filtra vendi, pajisjeje apo kërkimi. Pamja e periudhës i shfaq këto, bashkë me datën e fundit dhe kohën e marrjes.
+- API-ja kthen deri në 25 000 rreshta për kërkesë dhe ekspozon deri në 50 000 rreshta në ditë për çdo lloj kërkimi, të renditur sipas klikimeve. Mjeti merr deri në 2 × 25 000 rreshta për "faqe" dhe për "faqe + kërkim"; mbi këtë kufi, lista shënohet si e kufizuar.
+- Me dimensionet faqe/kërkim, Google heq një pjesë të të dhënave dhe kërkimet anonime. Prandaj shuma e faqeve ose e kërkimeve nuk përputhet me totalin e property-t.
+- **Totali i property-t** vjen nga një kërkesë agregate më vete (pa dimensione, `aggregationType: byProperty`), jo nga mbledhja e rreshtave. Kur API-ja s'kthen asnjë rresht, del "pa të dhëna të kthyera", që s'është e njëjtë me 0 klikime.
+- Kreu i periudhës tregon property-n, periudhën, gjendjen (e lidhur / e shkëputur / Demo / e ruajtur lokalisht) dhe katër karta: klikime, impressions, CTR, pozicion mesatar.
+- Tabelat e faqeve dhe të kërkimeve kanë filtër teksti dhe faqe (25/50/100/200 rreshta). Mbi secilën: "API ktheu N rreshta · pas filtrit M · po shfaqen a–b"; lista e kërkimeve s'përmban kurrë të gjitha kërkimet (anonimet mungojnë).
+- **Përputhja me faqet e auditit** bëhet vetëm kur është e verifikueshme: URL-ja përfundimtare e crawl-it duhet të jetë e njëjtë me URL-në e GSC pas normalizimit (host/skema me shkronja të vogla, pa port parazgjedhje dhe fragment). `/` në fund, www dhe query nuk barazohen. Një URL e GSC që, sipas crawl-it, ridrejton te një faqe e kontrolluar tregohet veç dhe nuk bashkohet me të.
+- Një URL brenda property-t pa rresht në përgjigje del **"pa të dhëna të kthyera"**, jo "zero trafik".
+
+**Detyrat e rekomanduara:**
+- Te `/report/<raporti>/tasks`, çdo detyrë tregon veç **rëndësinë teknike**, të pandryshuar, dhe **ekspozimin në GSC**: impressions, klikime, CTR dhe pozicion i ponderuar për faqet e detyrës me të dhëna, plus sa faqe nuk kanë të dhëna të kthyera. Për një detyrë me disa URL, ekspozimi është **shuma** e tyre ("Σ … impressions (N URL)"), e zbërthyer në detaje për çdo URL: s'është totali unik i property-t (një kërkim mund të shfaqë disa faqe) dhe, kur detyra lidhet me një URL tjetër (p.sh. URL që ridrejton, e linkuar nga këto faqe), s'mat trafikun e asaj URL-je.
+- Rreshti kryesor i detyrës tregon vetëm problemin, rëndësinë, faqet e prekura dhe ekspozimin; shpjegimet dhe provat janë te detajet. Filtrat "Seksioni" dhe "Rëndësia" s'fshehin paralajmërimet e crawl-it të pjesshëm dhe të matjes së vetme Lighthouse (në krye të faqes).
+- Renditja është teknike si parazgjedhje. Me "teknike, pastaj ekspozimi në GSC", detyrat renditen sipas impressions vetëm brenda së njëjtës rëndësi; një detyrë me rëndësi më të ulët s'kalon përpara nga impressions, dhe "pa të dhëna të kthyera" del pas detyrave me të dhëna. Health Score, pikët dhe severity-t nuk ndryshojnë, dhe impressions nuk paraqiten si fitim i garantuar.
+- Raportet pa GSC funksionojnë si më parë.
+
+**Kur nuk krahasohen:**
+- **Dy periudha** nuk krahasohen drejtpërdrejt kur kanë property të ndryshme (domain ↔ URL-prefix, www ↔ pa www), gjatësi të ndryshme, mbivendosen, ose njëra listë është e kufizuar. Lista e periudhave e thotë arsyen.
+- **Raport dhe periudhë:** te detyrat del shënim kur auditi bie para periudhës GSC ose më shumë se 14 ditë pas saj.
 
 ### Nisja e auditeve nga dashboard-i
 
