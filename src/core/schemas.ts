@@ -35,6 +35,13 @@ export interface Issue {
   fix: string;
   estimatedTime?: string;
   evidence: Evidence[];
+  /**
+   * Vetëm për gjetjet e grupuara sipas template-it: çelësi i plotë (klasat e body-t pa numra, ose hash i
+   * skeletit të DOM-it). I njëjti çelës = e njëjta strukturë faqeje, jo domosdoshmërisht i njëjti skedar.
+   */
+  templateKey?: string;
+  /** Prova për çdo faqe të grupit (evidence mban vetëm disa shembuj). */
+  occurrences?: { url: string; detected: string; expected?: string }[];
 }
 
 /** Issue para se t'i llogaritet priority/needsManualReview nga intelligence layer. */

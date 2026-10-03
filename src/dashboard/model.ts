@@ -24,6 +24,14 @@ export interface EvidenceView {
 export interface IssueView {
   /** Çelës i qëndrueshëm për krahasim: seksioni + kodi + faqja. */
   key: string;
+  /** Pozicioni në urlIssues(r): identifikon gjetjen brenda raportit (ankora #gjetja-N). */
+  index: number;
+  /** page | template | site ('' në raportet e vjetra). */
+  scope: string;
+  /** Çelësi i plotë i template-it, vetëm në raportet e reja ('' kur s'ruhet). */
+  templateKey: string;
+  /** Prova për çdo faqe (raportet e reja); bosh në të vjetrat, ku evidence ka vetëm disa shembuj. */
+  occurrences: { url: string; detected: string; expected: string }[];
   section: Section;
   code: string;
   module: string;
@@ -41,12 +49,19 @@ export interface IssueView {
 
 const sev = (x: unknown): Sev => (SEVERITIES.includes(x as Sev) ? (x as Sev) : 'low');
 
-function toIssue(raw: unknown, section: Section): IssueView {
+function toIssue(raw: unknown, section: Section, index = 0): IssueView {
   const i = obj(raw);
   const pages = arr(i.affectedPages).map(str).filter(Boolean);
   const url = str(i.url) || pages[0] || '';
   return {
     key: `${section}|${str(i.code)}|${url}`,
+    index,
+    scope: str(i.scope),
+    templateKey: str(i.templateKey),
+    occurrences: arr(i.occurrences).map((e) => {
+      const o = obj(e);
+      return { url: str(o.url), detected: str(o.detected), expected: str(o.expected) };
+    }).filter((o) => o.url),
     section,
     code: str(i.code) || 'UNKNOWN',
     module: str(i.module),
@@ -73,7 +88,7 @@ export function urlIssues(r: Obj): IssueView[] {
     ...arr(obj(r.site).issues).map((i) => toIssue(i, 'site')),
     ...arr(obj(r.business).issues).map((i) => toIssue(i, 'business')),
     ...arr(obj(r.quality).issues).map((i) => toIssue(i, 'quality')),
-  ];
+  ].map((i, index) => ({ ...i, index }));
 }
 
 /** Seksionet që ekzistojnë në raport (schema 1 s'ka site; 1–2 s'kanë business; 1–3 s'kanë quality). */

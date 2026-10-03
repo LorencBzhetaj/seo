@@ -17,6 +17,11 @@ describe('SEO on-page (faqet e tjera)', () => {
     expect(tpl.affectedPages).toEqual([`${B}/p/1`, `${B}/p/2`, `${B}/p/3`]);
     expect(tpl.message).toMatch(/^3 faqe pa meta description — i njëjti template \(single-product\)/);
     expect(desc.find((i) => i.scope === 'page')!.affectedPages).toEqual([`${B}/about`]);
+    // Çelësi i plotë i template-it dhe një provë për çdo faqe (evidence mban vetëm shembuj)
+    expect(tpl.templateKey).toBe('body:single-product');
+    expect(tpl.occurrences!.map((o) => o.url)).toEqual(tpl.affectedPages);
+    expect(tpl.occurrences!.every((o) => o.detected.length > 0)).toBe(true);
+    expect(desc.find((i) => i.scope === 'page')!.templateKey).toBeUndefined();
     // Faqja hyrëse pa <title> s'raportohet këtu (e mbulon MVP-1)
     expect(r.issues.some((i) => i.code === 'MISSING_TITLE')).toBe(false);
   });

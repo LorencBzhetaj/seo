@@ -49,6 +49,11 @@ function evidenceOf(occ: Occurrence[]): Evidence[] {
   return ev;
 }
 
+/** Një provë për çdo faqe (pa kufirin e shembujve), me tekst të shkurtuar. */
+function occurrencesOf(occ: Occurrence[]): { url: string; detected: string; expected?: string }[] {
+  return occ.map((o) => ({ url: o.url, detected: o.detected.slice(0, 300), ...(o.expected ? { expected: o.expected.slice(0, 200) } : {}) }));
+}
+
 /**
  * Bashkon të njëjtin problem nëpër faqe: çdo template me ≥ 2 faqe → një issue (scope "template");
  * faqet e mbetura → një issue i vetëm (scope "page") me të gjitha URL-të. Kështu problemet e
@@ -72,6 +77,8 @@ export function groupByTemplate(base: Base, message: (count: number, template: b
         affectedPages: occ.map((o) => o.url),
         message: `${message(occ.length, true)} — i njëjti template (${key.replace(/^(body|dom):/, '').slice(0, 60)})`,
         evidence: evidenceOf(occ),
+        templateKey: key,
+        occurrences: occurrencesOf(occ),
       });
     } else {
       singles.push(...occ);
@@ -85,6 +92,7 @@ export function groupByTemplate(base: Base, message: (count: number, template: b
       affectedPages: singles.map((o) => o.url),
       message: message(singles.length, false),
       evidence: evidenceOf(singles),
+      ...(singles.length > 1 ? { occurrences: occurrencesOf(singles) } : {}),
     });
   }
   return drafts;

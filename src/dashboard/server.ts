@@ -14,7 +14,7 @@ import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsFo
 import { findBrowser, type BrowserLookup } from '../core/browser.js';
 import { gitAvailable } from '../core/git.js';
 import { loadConfig } from '../core/config.js';
-import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, urlReportView, visualCompareView, type Files, type Query } from './views.js';
+import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, tasksView, urlReportView, visualCompareView, type Files, type Query } from './views.js';
 
 /**
  * Serveri lokal i dashboard-it.
@@ -158,6 +158,15 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
       if (p.startsWith('/jobs/')) {
         const job = jobs.get(p.slice('/jobs/'.length));
         return job ? page(200, jobView(job, csrf)) : page(404, errorView('Puna s\'u gjet', 'Puna s\'ekziston (lista mbahet vetëm sa është hapur dashboard-i).'));
+      }
+      // Detyrat e rekomanduara: /report/<emri>/tasks (vetëm raporte URL; emri validohet si çdo raport)
+      const tsk = p.match(/^\/report\/([^/]+)\/tasks$/);
+      if (tsk) {
+        const name = decodeURIComponent(tsk[1]!);
+        const r = readReport(opts.outputDir, name);
+        if (!r.ok) return page(404, errorView("Raporti s'u hap", r.reason));
+        if (kindOf(r.report) !== 'url') return page(404, errorView('Pa detyra', 'Auditet e skedarëve kanë gjetjet e tyre me path:line; detyrat vlejnë për raportet URL.'));
+        return page(200, tasksView(name, r.report));
       }
       // Galeria e pamjeve: /report/<emri>/visual (emri validohet si çdo raport; imazhet vetëm përmes /shot/)
       const gal = p.match(/^\/report\/([^/]+)\/visual$/);

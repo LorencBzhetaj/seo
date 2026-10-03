@@ -7,6 +7,8 @@ import { galleryBody, shotStateOf, signalShotsBlock, visualPanel } from './views
 import { gallery, type Gallery } from './visual.js';
 import type { PixelDiffResult, VisualCompare } from './visual-compare.js';
 import { visualCompareBody, visualComparePanel } from './views-visual-compare.js';
+import { buildTasks } from './tasks.js';
+import { blockedWarning, tasksBody, tasksHref, tasksPanel } from './views-tasks.js';
 
 /** Qasja te skedarët lokalë (screenshot, LHR): vetëm kontroll ekzistence, pa lexim përmbajtjeje. */
 export interface Files {
@@ -94,16 +96,21 @@ ${truncate(e.detected, 1500)}${e.expected ? html`
 interface ShotCtx {
   file: string;
   g: Gallery;
+  /** Gjetja → detyra (për lidhjen "Pjesë e detyrës"). */
+  taskOf?: Map<number, string>;
+  /** Gjetje të matura te përgjigjja e bllokimit (faqja hyrëse 401/403/429). */
+  onBlock?: { status: number; indices: Set<number> };
 }
 
-function issueDetails(i: IssueView, ctx: ShotCtx, open = false): SafeHtml {
+function issueDetails(i: IssueView, ctx: ShotCtx, open = false, anchor = false): SafeHtml {
   const isSignal = i.section === 'quality';
-  return html`<details class="issue" ${open ? html`open` : ''}><summary>${sevBadge(i.severity)} <strong>${i.message || i.code}</strong>
+  const task = ctx.taskOf?.get(i.index);
+  return html`<details class="issue" ${anchor ? html`id="gjetja-${String(i.index)}"` : ''} ${open ? html`open` : ''}><summary>${sevBadge(i.severity)} <strong>${i.message || i.code}</strong>
 <span class="code">${i.code}</span> <span class="badge">${SECTION_LABELS[i.section]}</span>
 ${i.pages.length > 1 ? html`<span class="note">${i.pages.length} faqe</span>` : ''}
 ${i.confidence !== null && i.confidence < 1 ? html`<span class="note">confidence ${i.confidence}</span>` : ''}
 ${i.needsManualReview || isSignal ? badge('warning', 'verifiko manualisht') : ''}</summary>
-<div class="body"><dl class="kv">
+<div class="body">${ctx.onBlock?.indices.has(i.index) ? html`<div class="warnbox">U mat te përgjigjja e bllokimit (HTTP ${String(ctx.onBlock.status)}), jo te faqja reale: s'është detyrë e zbatueshme. Vlerësoje te një audit i ri.</div>` : ''}${task ? html`<p class="note">Pjesë e detyrës: <a href="${tasksHref(ctx.file, `#${task}`)}">hap detyrën e rekomanduar</a></p>` : ''}<dl class="kv">
 ${i.url ? html`<dt>Faqja</dt><dd>${externalLink(i.url)}</dd>` : ''}
 ${i.whyItMatters ? html`<dt>Pse ka rëndësi</dt><dd>${i.whyItMatters}</dd>` : ''}
 ${i.fix ? html`<dt>${isSignal ? 'Sugjerim' : 'Rekomandim'}</dt><dd>${i.fix}</dd>` : ''}
@@ -129,7 +136,8 @@ function coverageText(c: Obj): string {
 export function urlReportView(file: string, r: Obj, q: Query, files: Files): string {
   const s = summarize(file, r);
   const issues = urlIssues(r);
-  const ctx: ShotCtx = { file, g: gallery(r, shotStateOf(files)) };
+  const tasks = buildTasks(r, issues);
+  const ctx: ShotCtx = { file, g: gallery(r, shotStateOf(files)), taskOf: tasks.taskOfFinding, ...(tasks.blocked ? { onBlock: { status: tasks.blocked.status, indices: new Set(tasks.measuredOnBlock.map((i) => i.index)) } } : {}) };
   const mods = statusOfModules(r);
   const health = obj(r.health);
   const site = obj(r.site);
@@ -179,9 +187,11 @@ ${Object.entries(BUSINESS_CATEGORY_LABELS).map(([k, label]) => {
     s.target,
     html`<h1>${s.target}</h1>
 <p class="sub">${externalLink(str(r.url))} · ${fmtDate(s.date)} · ${badge(s.status, STATUS_LABELS[s.status])} · schema ${s.schema} · rregullat ${str(r.ruleSetVersion)} · <span class="code">${file}</span></p>
-${quickNav(file, issues, ctx.g)}
+${quickNav(file, issues, ctx.g, tasks.tasks.length)}
+${tasks.blocked ? blockedWarning(tasks.blocked, tasks.measuredOnBlock.length) : ''}
 ${arr(r.partialModules).length ? html`<div class="warnbox">Module të pjesshme/të anashkaluara: ${arr(r.partialModules).map((m) => str(obj(m).module) || str(m)).join(', ')}</div>` : ''}
 <div class="grid">${homePanel}${sitePanel}</div>
+${tasksPanel(file, tasks)}
 ${visualPanel(file, ctx.g)}
 ${qualityPanel(r, issues, ctx)}
 ${businessPanel}
@@ -200,12 +210,12 @@ function lhrBlock(r: Obj, files: Files): SafeHtml | '' {
 }
 
 /** Lidhje të shpejta te pamjet dhe sinjalet (të dyja jashtë Health Score). */
-function quickNav(file: string, issues: IssueView[], g: Gallery): SafeHtml {
+function quickNav(file: string, issues: IssueView[], g: Gallery, taskCount: number): SafeHtml {
   const signals = issues.filter((i) => i.section === 'quality');
   const content = signals.filter((i) => i.module === 'content-quality').length;
   const visual = signals.filter((i) => i.module === 'visual-identity').length;
   const shots = g.shots.filter((s) => s.status === 'ok').length;
-  return html`<nav class="quick"><span class="note">Shqyrtim njerëzor (jashtë Health Score):</span>
+  return html`<nav class="quick"><a href="${tasksHref(file)}"><strong>Detyrat e rekomanduara (${String(taskCount)})</strong></a><span class="note">Shqyrtim njerëzor (jashtë Health Score):</span>
 ${g.available ? html`<a href="/report/${encodeURIComponent(file)}/visual">Pamjet vizuale (${shots})</a>` : html`<span class="note">pa pamje të renderuara</span>`}
 <a href="#signals">Sinjalet e cilësisë (${signals.length}: ${content} përmbajtje, ${visual} pamje${signals.length - content - visual > 0 ? `, ${signals.length - content - visual} të tjera` : ''})</a></nav>`;
 }
@@ -254,7 +264,7 @@ function issuesPanel(file: string, issues: IssueView[], q: Query, ctx: ShotCtx):
 <label>Faqja<select name="page">${opt('', `Të gjitha (${pages.length})`)}${pages.slice(0, 500).map((p) => opt(p, truncate(p, 70), page))}</select></label>
 <button type="submit">Filtro</button> <a href="${reportHref(file)}#issues">pastro</a></form>
 <p class="note">${shown.length} nga ${issues.length}. Renditja: rëndësia, pastaj prioriteti.</p>
-${shown.map((i) => issueDetails(i, ctx))}</section>`;
+${shown.map((i) => issueDetails(i, ctx, false, true))}</section>`;
 }
 
 function recommendationsPanel(r: Obj): SafeHtml {
@@ -391,6 +401,11 @@ export function errorView(title: string, message: string): string {
 
 export function visualCompareView(c: VisualCompare, q: Query, diff?: PixelDiffResult): string {
   return layout(`Krahasimi vizual · ${c.sa.target}`, visualCompareBody(c, q, diff));
+}
+
+export function tasksView(file: string, r: Obj): string {
+  const s = summarize(file, r);
+  return layout(`Detyrat · ${s.target}`, tasksBody(file, s.target, buildTasks(r, urlIssues(r))));
 }
 
 export function galleryView(file: string, r: Obj, q: Query, files: Files): string {
