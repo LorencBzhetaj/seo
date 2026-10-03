@@ -39,7 +39,15 @@ describe('Identiteti vizual me Chrome real (desktop + mobile, përmes guard prox
     for (const c of v.captures) {
       const file = path.join(out, c.screenshot!);
       expect(fs.readFileSync(file).subarray(0, 2).toString('hex'), c.screenshot).toBe('ffd8'); // JPEG
+      // Metadatat e kapjes: viewport-i i vendosur, zona e kapur dhe përmasat reale të skedarit përputhen
+      const w = c.viewport === 'mobile' ? 390 : 1366;
+      expect(c.viewportSize).toMatchObject({ width: w, deviceScaleFactor: 1, isMobile: c.viewport === 'mobile' });
+      expect(c.clip).toMatchObject({ width: w, clipped: c.probe!.documentHeight > 3000 });
+      expect(c.screenshotSize).toEqual({ width: w, height: c.clip!.height });
+      expect(c.finalUrl).toBe(c.url);
+      expect(Date.parse(c.capturedAt!)).not.toBeNaN();
     }
+    expect(v.browserVersion).toMatch(/Chrome\/\d+/);
     const a = analyzeVisual(v.captures);
     const at = (p: string) => a.signals.filter((s) => s.target === `http://${host}${p}`).map((s) => s.code).sort();
     expect(at('/')).toEqual(['GRADIENT_HEAVY', 'MOBILE_HORIZONTAL_OVERFLOW', 'PLACEHOLDER_IMAGE', 'UNIFORM_ICON_CARDS']);

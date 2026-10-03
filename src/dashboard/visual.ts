@@ -4,9 +4,44 @@ import { arr, num, obj, str, type Obj } from './store.js';
 /**
  * Pamjet e renderuara të një raporti URL (quality.visual.captures) dhe lidhja e tyre me sinjalet.
  * Vetëm lexim i raportit: s'shpiket asnjë e dhënë që mungon. Madhësia e viewport-it s'ruhet në raportet
- * e deritanishme (vetëm desktop/mobile), prandaj pamja e tregon si "s'është ruajtur".
+ * para metadatave të kapjes (vetëm desktop/mobile), prandaj pamja e tregon si "s'është ruajtur".
  */
 export type ShotState = 'ok' | 'missing' | 'invalid';
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** Metadatat e kapjes, siç i ruajti motori (null/'' = s'janë ruajtur: raport i vjetër). */
+export interface CaptureMeta {
+  viewportSize: (Size & { deviceScaleFactor: number; isMobile: boolean | null }) | null;
+  measuredViewport: Size | null;
+  clip: (Size & { documentHeight: number; clipped: boolean }) | null;
+  screenshotSize: Size | null;
+  capturedAt: string;
+}
+
+const size = (v: unknown): Size | null => {
+  const o = obj(v);
+  const width = num(o.width);
+  const height = num(o.height);
+  return width !== null && height !== null ? { width, height } : null;
+};
+
+export function captureMeta(o: Obj): CaptureMeta {
+  const vs = size(o.viewportSize);
+  const vso = obj(o.viewportSize);
+  const cl = size(o.clip);
+  const clo = obj(o.clip);
+  return {
+    viewportSize: vs && { ...vs, deviceScaleFactor: num(vso.deviceScaleFactor) ?? 1, isMobile: typeof vso.isMobile === 'boolean' ? vso.isMobile : null },
+    measuredViewport: size(o.measuredViewport),
+    clip: cl && typeof clo.clipped === 'boolean' && num(clo.documentHeight) !== null ? { ...cl, documentHeight: num(clo.documentHeight)!, clipped: clo.clipped } : null,
+    screenshotSize: size(o.screenshotSize),
+    capturedAt: str(o.capturedAt),
+  };
+}
 
 /** Si e shikon dashboard-i një shteg screenshot-i: i vlefshëm dhe ekziston në output/visual, mungon, ose i pavlefshëm. */
 export type ShotStateOf = (rel: string) => ShotState;
@@ -24,6 +59,7 @@ export interface Shot {
   state: ShotState;
   /** Lartësia e faqes së renderuar (px), nga matjet e raportit. */
   documentHeight: number | null;
+  meta: CaptureMeta;
 }
 
 export interface Gallery {
@@ -39,16 +75,18 @@ export interface Gallery {
   shots: Shot[];
   pages: string[];
   devices: string[];
+  /** Chrome-i që renderoi pamjet ('' = s'është ruajtur). */
+  browserVersion: string;
 }
 
 export function gallery(r: Obj, stateOf: ShotStateOf): Gallery {
   const q = obj(r.quality);
   const v = obj(q.visual);
   const auditDate = str(r.completedAt) || str(r.startedAt);
-  if (!r.quality) return { available: false, reason: "Ky raport s'ka seksionin e cilësisë/pamjes (raport i vjetër ose auditi pa këtë modul).", auditDate, screenshotsDir: '', maxScreenshotHeight: null, stateOf, shots: [], pages: [], devices: [] };
+  if (!r.quality) return { available: false, reason: "Ky raport s'ka seksionin e cilësisë/pamjes (raport i vjetër ose auditi pa këtë modul).", auditDate, screenshotsDir: '', maxScreenshotHeight: null, stateOf, shots: [], pages: [], devices: [], browserVersion: '' };
   if (!q.visual) {
     const why = q.status === 'skipped' ? str(q.reason) : obj(obj(q.statuses).visualIdentity).reason;
-    return { available: false, reason: `Ky raport s'ka pamje të renderuara${str(why) ? `: ${str(why)}` : '.'}`, auditDate, screenshotsDir: '', maxScreenshotHeight: null, stateOf, shots: [], pages: [], devices: [] };
+    return { available: false, reason: `Ky raport s'ka pamje të renderuara${str(why) ? `: ${str(why)}` : '.'}`, auditDate, screenshotsDir: '', maxScreenshotHeight: null, stateOf, shots: [], pages: [], devices: [], browserVersion: '' };
   }
   const raw = arr(v.captures).map(obj);
   const shots = captures(r).map((c, index): Shot => {
@@ -64,6 +102,7 @@ export function gallery(r: Obj, stateOf: ShotStateOf): Gallery {
       screenshot: c.screenshot,
       state: c.screenshot ? stateOf(c.screenshot) : 'missing',
       documentHeight: num(obj(o.summary).documentHeight) ?? num(obj(o.probe).documentHeight),
+      meta: captureMeta(o),
     };
   });
   return {
@@ -76,6 +115,7 @@ export function gallery(r: Obj, stateOf: ShotStateOf): Gallery {
     shots,
     pages: [...new Set(shots.map((s) => s.url).filter(Boolean))],
     devices: [...new Set(shots.map((s) => s.device).filter(Boolean))],
+    browserVersion: str(v.browserVersion),
   };
 }
 

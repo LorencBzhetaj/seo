@@ -11,6 +11,8 @@ import { filterShots, signalShots, signalsForShot, type Gallery, type Shot, type
 export const DEVICE_LABELS: Record<string, string> = { desktop: 'Desktop', mobile: 'Mobile' };
 const deviceLabel = (d: string) => DEVICE_LABELS[d] ?? (d || 'pajisje e panjohur');
 
+export const sizeText = (s: { width: number; height: number }) => `${s.width} × ${s.height}`;
+
 export const shotHref = (rel: string) => `/shot/${rel.split('/').map(encodeURIComponent).join('/')}`;
 
 export function galleryHref(file: string, q: { page?: string; device?: string; shot?: number } = {}, hash = ''): string {
@@ -27,7 +29,7 @@ export function shotStateOf(files: Files): ShotStateOf {
   return (rel) => (!isShotRel(rel) ? 'invalid' : files.shotExists(rel) ? 'ok' : 'missing');
 }
 
-function fmt(iso: string): string {
+export function fmt(iso: string): string {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return "s'është ruajtur";
   const p = (n: number) => String(n).padStart(2, '0');
@@ -105,7 +107,10 @@ export function galleryBody(file: string, target: string, g: Gallery, issues: Is
   if (idx !== undefined && !sel) detail = html`<div class="warnbox">Pamja nr. ${String(idx)} s'ekziston në këtë raport.</div>`;
   if (sel) {
     const linked = signalsForShot(sel, issues, g);
-    const cut = sel.documentHeight !== null && g.maxScreenshotHeight !== null && sel.documentHeight > g.maxScreenshotHeight;
+    const m = sel.meta;
+    // Prerja: e ruajtur nga motori, ose (raport i vjetër) e nxjerrë nga lartësia e faqes kundrejt kufirit.
+    const cut = m.clip ? m.clip.clipped : sel.documentHeight !== null && g.maxScreenshotHeight !== null && sel.documentHeight > g.maxScreenshotHeight;
+    const notStored = html`<span class="note">s'është ruajtur në këtë raport</span>`;
     const reportPage = (u: string) => `/report/${encodeURIComponent(file)}?section=quality&page=${encodeURIComponent(u)}#issues`;
     detail = html`<section class="panel" id="pamja"><h2>${deviceLabel(sel.device)} · ${truncate(sel.url, 90)}</h2>
 <div class="viewer">
@@ -118,9 +123,10 @@ export function galleryBody(file: string, target: string, g: Gallery, issues: Is
 <dt>Faqja</dt><dd>${externalLink(sel.url)}${sel.finalUrl && sel.finalUrl !== sel.url ? html`<div class="note">URL përfundimtare: ${sel.finalUrl}</div>` : ''}</dd>
 <dt>Lloji i faqes</dt><dd>${sel.pageType || html`<span class="note">s'është ruajtur</span>`}</dd>
 <dt>Pajisja</dt><dd>${deviceLabel(sel.device)}</dd>
-<dt>Viewport</dt><dd><span class="note">madhësia s'është ruajtur në këtë raport (vetëm desktop/mobile)</span></dd>
-<dt>Lartësia e faqes</dt><dd>${sel.documentHeight !== null ? `${sel.documentHeight} px` : html`<span class="note">s'është ruajtur</span>`}${cut ? html`<div class="note">Screenshot-i është prerë te ${String(g.maxScreenshotHeight)} px (kufiri i raportit).</div>` : ''}</dd>
-<dt>Data e auditit</dt><dd>${fmt(g.auditDate)}</dd>
+<dt>Viewport</dt><dd>${m.viewportSize ? html`${sizeText(m.viewportSize)} px${m.viewportSize.deviceScaleFactor !== 1 ? ` · DPR ${m.viewportSize.deviceScaleFactor}` : ''}${m.measuredViewport && (m.measuredViewport.width !== m.viewportSize.width || m.measuredViewport.height !== m.viewportSize.height) ? html`<div class="note">i matur në faqe: ${sizeText(m.measuredViewport)} px</div>` : ''}` : html`<span class="note">madhësia s'është ruajtur në këtë raport (vetëm desktop/mobile)</span>`}</dd>
+<dt>Lartësia e faqes</dt><dd>${sel.documentHeight !== null ? `${sel.documentHeight} px` : html`<span class="note">s'është ruajtur</span>`}${cut ? html`<div class="note">Screenshot-i është prerë te ${String(m.clip?.height ?? g.maxScreenshotHeight)} px${m.clip ? '' : " (nxjerrë nga lartësia; prerja s'është ruajtur)"}.</div>` : ''}</dd>
+<dt>Përmasat e skedarit</dt><dd>${m.screenshotSize ? `${sizeText(m.screenshotSize)} px` : notStored}</dd>
+<dt>Data e auditit</dt><dd>${fmt(g.auditDate)}${m.capturedAt ? html`<div class="note">kapur: ${fmt(m.capturedAt)}</div>` : ''}</dd>
 <dt>Skedari</dt><dd><span class="code">${sel.screenshot || '—'}</span>${sel.state === 'ok' ? html` · <a href="${shotHref(sel.screenshot)}">hap në madhësinë origjinale</a>` : ''}</dd>
 </dl>
 <p class="pager">${prev ? html`<a href="${galleryHref(file, { page, device, shot: prev.index }, '#pamja')}">← e mëparshmja</a>` : ''} ${next ? html`<a href="${galleryHref(file, { page, device, shot: next.index }, '#pamja')}">e radhës →</a>` : ''}</p>

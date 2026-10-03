@@ -5,6 +5,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { compareReports } from './compare.js';
+import { compareVisual, pixelDiff, type PixelDiffResult } from './visual-compare.js';
 import { checkFolder, folderRequest, parseRepoForm, parseUrlForm, type AuditRequest } from './forms.js';
 import { JobLimitError, JobManager, type JobManagerOptions } from './jobs.js';
 import { STYLE } from './style.js';
@@ -13,7 +14,7 @@ import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsFo
 import { findBrowser, type BrowserLookup } from '../core/browser.js';
 import { gitAvailable } from '../core/git.js';
 import { loadConfig } from '../core/config.js';
-import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, urlReportView, type Files, type Query } from './views.js';
+import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, urlReportView, visualCompareView, type Files, type Query } from './views.js';
 
 /**
  * Serveri lokal i dashboard-it.
@@ -180,7 +181,27 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         const b = readReport(opts.outputDir, q.b);
         if (!a.ok || !b.ok) return page(404, comparePickerView(list, q, `S'u hap: ${!a.ok ? a.reason : ''} ${!b.ok ? b.reason : ''}`));
         if (q.a === q.b) return page(400, comparePickerView(list, q, 'Zgjidh dy raporte të ndryshme.'));
-        return page(200, compareView(compareReports(q.a, a.report, q.b, b.report)));
+        const shotFile = (rel: string) => screenshotPath(opts.outputDir, rel);
+        return page(200, compareView(compareReports(q.a, a.report, q.b, b.report), compareVisual(q.a, a.report, q.b, b.report, shotFile)));
+      }
+      // Krahasimi vizual: e njëjta faqe + pajisje mes dy auditeve; pikselët maten vetëm për çiftin e zgjedhur.
+      if (p === '/compare/visual') {
+        const list = listReports(opts.outputDir);
+        if (!q.a || !q.b) return page(200, comparePickerView(list, { a: list.reports[1]?.file, b: list.reports[0]?.file }));
+        const a = readReport(opts.outputDir, q.a);
+        const b = readReport(opts.outputDir, q.b);
+        if (!a.ok || !b.ok) return page(404, comparePickerView(list, q, `S'u hap: ${!a.ok ? a.reason : ''} ${!b.ok ? b.reason : ''}`));
+        if (q.a === q.b) return page(400, comparePickerView(list, q, 'Zgjidh dy raporte të ndryshme.'));
+        const shotFile = (rel: string) => screenshotPath(opts.outputDir, rel);
+        const c = compareVisual(q.a, a.report, q.b, b.report, shotFile);
+        const sel = c.pairs.find((x) => x.url === q.page && x.device === q.device);
+        let diff: PixelDiffResult | undefined;
+        if (sel && sel.status !== 'not-comparable' && sel.a && sel.b) {
+          const fa = shotFile(sel.a.screenshot);
+          const fb = shotFile(sel.b.screenshot);
+          if (fa && fb) diff = pixelDiff(fa, fb, sel.a.meta.viewportSize?.deviceScaleFactor ?? 1);
+        }
+        return page(200, visualCompareView(c, q, diff));
       }
       if (p.startsWith('/shot/')) {
         const rel = p.slice('/shot/'.length).split('/').map(decodeURIComponent).join('/');

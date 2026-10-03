@@ -77,6 +77,7 @@ export function buildQualitySection(run: AuditRun) {
             screenshotsDir: v.value.screenshotsDir,
             limits: v.value.limits,
             blockedRequests: v.value.blockedRequests.length,
+            browserVersion: v.value.browserVersion,
             captures: v.value.captures.map((c) => ({
               url: c.url,
               pageType: c.pageType,
@@ -84,6 +85,13 @@ export function buildQualitySection(run: AuditRun) {
               status: c.status,
               reason: c.reason,
               screenshot: c.screenshot,
+              // Metadatat e kapjes, për krahasimin mes auditeve (raportet e vjetra s'i kanë).
+              finalUrl: c.finalUrl,
+              viewportSize: c.viewportSize,
+              measuredViewport: c.measuredViewport,
+              clip: c.clip,
+              screenshotSize: c.screenshotSize,
+              capturedAt: c.capturedAt,
               summary: c.probe && {
                 documentHeight: c.probe.documentHeight,
                 horizontalOverflowPx: Math.max(0, c.probe.scrollWidth - VIEWPORTS[c.viewport].width),

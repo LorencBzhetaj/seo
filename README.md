@@ -344,7 +344,7 @@ Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`
 - **Cilësia:** gjetjet e grupuara (`quality.groups`) dalin si një rresht; secila provë hapet veç, me screenshot-in e saj. Sinjalet shënohen "s'janë provë se faqja është krijuar nga AI" dhe s'hyjnë në Health.
 - **Pamjet vizuale:**
   - **Ku:** në krye të raportit, "Pamjet vizuale (N)" dhe "Sinjalet e cilësisë". Paneli "Pamjet e renderuara" shfaq të gjitha pamjet, ndërsa **Hap galerinë** (`/report/<raporti>/visual`) jep filtra sipas faqes dhe pajisjes.
-  - **Pamja e madhe:** klikimi mbi një pamje e hap të madhe, me faqen, llojin e faqes, pajisjen, lartësinë e faqes, datën e auditit, skedarin dhe sinjalet e lidhura. Madhësia e viewport-it s'ruhet në raportet e deritanishme, prandaj shfaqet si "s'është ruajtur".
+  - **Pamja e madhe:** klikimi mbi një pamje e hap të madhe, me faqen, llojin e faqes, pajisjen, lartësinë e faqes, datën e auditit, skedarin dhe sinjalet e lidhura. Raportet e reja ruajnë edhe viewport-in (i vendosur dhe i matur në faqe), prerjen, përmasat reale të skedarit dhe kohën e kapjes. Raportet e vjetra s'i kanë, prandaj shfaqen si "s'është ruajtur".
   - **Te secili sinjal**, pamjet ndahen qartë:
     - **"Provë e sinjalit"**: vetëm kur shtegu i screenshot-it në provë përputhet saktësisht me një pamje të raportit të së njëjtës faqe; pajisja merret nga ajo pamje;
     - **"Pamje për kontekst"**: e njëjta URL, por jo provë.
@@ -365,6 +365,15 @@ Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`
     - modul i anashkaluar;
     - pikëzim tjetër (`scoringVersion`);
     - **rregulla të ndryshme** (`ruleSetVersion` tjetër ose që mungon). Raportet s'mbajnë version për çdo rregull, ndaj gjetjet që u zhdukën ose u shfaqën dalin "s'krahasohen", me arsyen. Gjetjet që mbetën në të dyja shfaqen si "mbetën".
+- **Krahasimi vizual** (`/compare/visual`; nga krahasimi i raporteve → **Hap krahasimin vizual**, ose butoni **Krahaso pamjet** te `/compare`) krahason të njëjtën faqe (URL e njëjtë) në të njëjtën pajisje mes dy auditeve të të njëjtit sit. Para matjes verifikohen:
+  - URL-ja e kërkuar dhe ajo përfundimtare (ridrejtimi);
+  - pajisja dhe emulimi i ruajtur (mobile/desktop);
+  - madhësia e viewport-it (e vendosur dhe e matur në faqe);
+  - prerja e screenshot-it (kufiri 3000 px);
+  - përmasat reale të skedarëve, të lexuara nga header-i dhe të krahasuara me ato që pretendon raporti;
+  - versioni kryesor i Chrome-it.
+
+  Çdo çift del **krahasim i plotë**, **krahasim me kufizime** (p.sh. raport i vjetër pa këto metadata, screenshot i prerë, Chrome tjetër, ridrejtim i ndryshëm) ose **s'krahasohet** (gjerësi/DPR e ndryshme, skedar që mungon ose s'përputhet me raportin, faqe e kapur vetëm në njërin audit). Për çiftin e zgjedhur jepen tabela e verifikimit, **përqindja e pikselëve me diferencë mbi tolerancën 40/255** në të paktën një kanal ngjyre, në zonën e përbashkët (me brezat 200 px ku përqendrohet ndryshimi dhe diferencën më të madhe të një kanali), pamjet krah për krah dhe një mbivendosje "diferencë" (CSS, pa JavaScript, me lartësi të kufizuar dhe lidhje te pamjet origjinale). Te mbivendosja, e zeza do të thotë ngjyrë e njëjtë në A dhe B; gri e errët janë diferenca të vogla (zakonisht zhurmë JPEG, që s'numërohen); zonat e ndriçuara janë ndryshime. Kur viewport-i i njërit raport s'dihet (raport i vjetër), matja shënohet **matje orientuese**: tregon drejtimin, jo një krahasim të verifikuar. Matja s'është vlerësim "më mirë/më keq", s'hyn në Health dhe mund të ndikohet nga përmbajtje dinamike. Toleranca 40/255 për zhurmën e JPEG dhe brezat janë provizore.
 
   > **Pragjet janë provizore dhe të pakalibruara:** ±5 pikë për variacionin e Lighthouse dhe ≥ 90% faqe të përbashkëta që crawl-i të krahasohet. Pamja e krahasimit e thotë këtë në krye. Mund të ndryshojnë pasi të ketë më shumë ekzekutime të përsëritura të të njëjtit sit.
 

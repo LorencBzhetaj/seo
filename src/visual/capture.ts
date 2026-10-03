@@ -7,6 +7,7 @@ import { startGuardProxy } from '../net/guard-proxy.js';
 import { assertUrlAllowed } from '../net/url-guard.js';
 import { PROBE_SCRIPT, type ProbeResult } from './probe.js';
 import { removeSync } from '../core/fsutil.js';
+import { imageFileSize } from '../core/image-size.js';
 
 export type Viewport = 'desktop' | 'mobile';
 
@@ -33,6 +34,15 @@ export interface VisualCapture {
   /** Path relativ ndaj dosjes së raporteve (p.sh. visual/gjecaj.al-…/1-home-desktop.jpg). */
   screenshot?: string;
   probe?: ProbeResult;
+  /** Viewport-i i vendosur në Chrome (px CSS) para navigimit. */
+  viewportSize?: { width: number; height: number; deviceScaleFactor: number; isMobile: boolean };
+  /** Viewport-i i matur brenda faqes (innerWidth × innerHeight) kur u bë screenshot-i. */
+  measuredViewport?: { width: number; height: number };
+  /** Zona e kapur (px CSS, nga maja): clipped = faqja ishte më e gjatë se kufiri dhe pjesa poshtë mbeti jashtë. */
+  clip?: { width: number; height: number; documentHeight: number; clipped: boolean };
+  /** Përmasat reale të skedarit të ruajtur, të lexuara nga header-i i tij pas ruajtjes (null: s'u lexua). */
+  screenshotSize?: { width: number; height: number } | null;
+  capturedAt?: string;
 }
 
 export interface VisualData {
@@ -41,6 +51,8 @@ export interface VisualData {
   screenshotsDir: string;
   limits: { maxPages: number; navigationTimeoutMs: number; delayMs: number; maxScreenshotHeight: number };
   blockedRequests: { url: string; reason: string }[];
+  /** Versioni i Chrome-it që renderoi pamjet (ndikon te krahasimi mes auditeve). */
+  browserVersion?: string;
 }
 
 const NAV_TIMEOUT_MS = 30_000;
@@ -116,7 +128,8 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
       throw new AbortedError();
     }
     browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}`, defaultViewport: null });
-    const page = await browser.newPage();
+    data.browserVersion = await browser.version().catch(() => undefined);
+    let page = await browser.newPage();
     let lastNav = 0;
     for (const [i, t] of list.entries()) {
       for (const vp of ['desktop', 'mobile'] as Viewport[]) {
@@ -125,6 +138,7 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
           assertUrlAllowed(new URL(t.url), config.allowedPrivateHosts);
           const v = VIEWPORTS[vp];
           await page.setViewport({ width: v.width, height: v.height, isMobile: v.isMobile, hasTouch: v.hasTouch, deviceScaleFactor: v.deviceScaleFactor });
+          const viewportSize = { width: v.width, height: v.height, deviceScaleFactor: v.deviceScaleFactor, isMobile: v.isMobile };
           await page.setUserAgent(v.userAgent ?? (await browser.userAgent()).replace('HeadlessChrome', 'Chrome'));
           const wait = lastNav + delayMs - Date.now();
           if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -148,10 +162,24 @@ export async function captureVisual(targets: VisualTarget[], config: AuditConfig
           const probe = (await page.evaluate(PROBE_SCRIPT)) as ProbeResult;
           const file = `${i + 1}-${slug(t.url)}-${vp}.jpg`;
           const height = Math.min(probe.documentHeight, MAX_SCREENSHOT_HEIGHT);
-          await page.screenshot({ path: path.join(absDir, file) as `${string}.jpeg`, type: 'jpeg', quality: 70, clip: { x: 0, y: 0, width: VIEWPORTS[vp].width, height }, captureBeyondViewport: true });
-          data.captures.push({ ...base, status: 'ok', finalUrl, screenshot: path.posix.join(relDir, file), probe });
+          const capturedAt = new Date().toISOString();
+          await page.screenshot({ path: path.join(absDir, file) as `${string}.jpeg`, type: 'jpeg', quality: 70, clip: { x: 0, y: 0, width: v.width, height }, captureBeyondViewport: true });
+          data.captures.push({
+            ...base, status: 'ok', finalUrl, screenshot: path.posix.join(relDir, file), probe,
+            viewportSize,
+            measuredViewport: probe.viewport,
+            clip: { width: v.width, height, documentHeight: probe.documentHeight, clipped: probe.documentHeight > MAX_SCREENSHOT_HEIGHT },
+            // Verifikim: përmasat reale të skedarit (pritet clip × deviceScaleFactor); dashboard-i i krahason.
+            screenshotSize: imageFileSize(path.join(absDir, file)),
+            capturedAt,
+          });
         } catch (err) {
           data.captures.push({ ...base, reason: `S'u renderua: ${(err as Error).message.split('\n')[0]!.slice(0, 160)}` });
+          // Faqja mund të ketë mbetur e mbyllur/e shkëputur (p.sh. "detached Frame", "Session closed"):
+          // pamjet e radhës kapen në një faqe të re, që një dështim të mos i rrëzojë të gjitha.
+          if (isAborting()) throw new AbortedError();
+          await page.close().catch(() => undefined);
+          page = await browser.newPage();
         }
       }
     }

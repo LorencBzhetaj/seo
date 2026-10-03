@@ -281,11 +281,11 @@ describe('Dashboard: përmbajtja e pabesuar s\'ekzekutohet', () => {
 // ------------------------------------------------------------ ndarja nga motori
 
 describe('Dashboard: i ndarë nga motori i auditimit', () => {
-  it('src/dashboard importon nga motori vetëm skemën, konfigurimin dhe kërkimin e shfletuesit/Git-it; motori s\'importon dashboard-in', () => {
+  it('src/dashboard importon nga motori vetëm skemën, konfigurimin, kërkimin e shfletuesit/Git-it dhe leximin e përmasave të imazhit; motori s\'importon dashboard-in', () => {
     const src = path.resolve('src');
     const imports = (file: string) => [...fs.readFileSync(file, 'utf8').matchAll(/from '([^']+)'/g)].map((m) => m[1]!);
     for (const f of fs.readdirSync(path.join(src, 'dashboard'))) {
-      for (const i of imports(path.join(src, 'dashboard', f)).filter((x) => x.startsWith('..'))) expect(['../core/schemas.js', '../core/config.js', '../core/browser.js', '../core/git.js'], f).toContain(i);
+      for (const i of imports(path.join(src, 'dashboard', f)).filter((x) => x.startsWith('..'))) expect(['../core/schemas.js', '../core/config.js', '../core/browser.js', '../core/git.js', '../core/image-size.js'], f).toContain(i);
     }
     const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === 'dashboard' || e.name === 'app' ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]));
     for (const f of walk(src).filter((x) => x.endsWith('.ts'))) expect(imports(f).some((i) => i.includes('dashboard')), f).toBe(false);

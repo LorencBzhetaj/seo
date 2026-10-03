@@ -5,6 +5,8 @@ import { fileRef, SECTION_LABELS, SEV_LABELS, SEVERITIES, sourceFindings, urlIss
 import { arr, kindOf, num, obj, str, summarize, type ListResult, type Obj, type ReportSummary } from './store.js';
 import { galleryBody, shotStateOf, signalShotsBlock, visualPanel } from './views-visual.js';
 import { gallery, type Gallery } from './visual.js';
+import type { PixelDiffResult, VisualCompare } from './visual-compare.js';
+import { visualCompareBody, visualComparePanel } from './views-visual-compare.js';
 
 /** Qasja te skedarët lokalë (screenshot, LHR): vetëm kontroll ekzistence, pa lexim përmbajtjeje. */
 export interface Files {
@@ -338,7 +340,7 @@ ${error ? html`<div class="warnbox">${error}</div>` : ''}
 <div class="panel"><form class="filters" method="get" action="/compare">
 <label>Raporti A<select name="a">${list.reports.map((r) => opt(r, q.a))}</select></label>
 <label>Raporti B<select name="b">${list.reports.map((r) => opt(r, q.b))}</select></label>
-<button type="submit">Krahaso</button></form></div>`,
+<button type="submit">Krahaso</button> <button type="submit" class="secondary" formaction="/compare/visual">Krahaso pamjet</button></form></div>`,
   );
 }
 
@@ -355,7 +357,7 @@ ${rows.map((r) => html`<tr><td>${r.label}</td><td class="num">${scoreText(r.a)}<
 </tbody></table>`;
 }
 
-export function compareView(c: CompareResult): string {
+export function compareView(c: CompareResult, visual?: VisualCompare): string {
   const head = html`<h1>Krahasimi: ${c.a.target}</h1>
 <p class="sub">A: <a href="${reportHref(c.a.file)}">${fmtDate(c.a.date)}</a> ${badge(c.a.status, STATUS_LABELS[c.a.status])} → B: <a href="${reportHref(c.b.file)}">${fmtDate(c.b.date)}</a> ${badge(c.b.status, STATUS_LABELS[c.b.status])}</p>`;
   if (!c.sameTarget) return layout('Krahasimi', html`${head}<div class="warnbox">${c.reason ?? ''}</div>`);
@@ -365,6 +367,7 @@ export function compareView(c: CompareResult): string {
     'Krahasimi',
     html`${head}
 <div class="panel"><h2>Kujdes para leximit</h2><ul class="plain">${c.caveats.map((x) => html`<li>${x}</li>`)}<li>${PROVISIONAL_THRESHOLDS}</li></ul></div>
+${visual?.sameTarget && c.a.kind === 'url' ? visualComparePanel(visual) : ''}
 ${home.length ? html`<section class="panel scope"><h2>Faqja hyrëse</h2>
 <p class="note">Lighthouse: ${c.lighthouse.comparable ? 'konfigurim i njëjtë' : html`<strong>i pakrahasueshëm</strong>`}${c.lighthouse.differences.length ? html` — ${c.lighthouse.differences.join('; ')}` : ''}. Performance ndryshon mes ekzekutimeve edhe pa ndryshim në sit.</p>
 ${scoreTable(home)}</section>` : ''}
@@ -385,6 +388,10 @@ export function errorView(title: string, message: string): string {
 
 
 // ---------------------------------------------------------------- Galeria e pamjeve
+
+export function visualCompareView(c: VisualCompare, q: Query, diff?: PixelDiffResult): string {
+  return layout(`Krahasimi vizual · ${c.sa.target}`, visualCompareBody(c, q, diff));
+}
 
 export function galleryView(file: string, r: Obj, q: Query, files: Files): string {
   const s = summarize(file, r);
