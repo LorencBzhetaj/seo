@@ -1,3 +1,4 @@
+import { displayDir } from './gsc-store.js';
 import { MAX_DEPTH, MAX_LH_RUNS, MAX_PAGES, URL_DEFAULTS, type FolderCheck } from './forms.js';
 import { externalLink, html, truncate, type SafeHtml } from './html.js';
 import type { BrowserLookup } from '../core/browser.js';
@@ -64,7 +65,7 @@ function browserBox(env: AuditEnv): SafeHtml {
 }
 
 /** Butoni "Hap dosjen e raporteve" (POST me token; serveri hap vetëm dosjen e vet të raporteve). */
-export function openReportsForm(csrf: string, back: '/' | '/audit'): SafeHtml {
+export function openReportsForm(csrf: string, back: '/reports' | '/audit'): SafeHtml {
   return html`<form method="post" action="/open-reports" class="inline">${token(csrf)}<input type="hidden" name="back" value="${back}"><button type="submit" class="secondary">Hap dosjen e raporteve</button></form>`;
 }
 
@@ -78,7 +79,7 @@ export function auditFormsView(csrf: string, running: Job[], limit: number, stat
 <p class="sub">Auditet ekzekutohen nga i njëjti motor si CLI-ja (<span class="code">npm run audit</span> / <span class="code">seo-audit.cmd</span>), në këtë kompjuter. Raporti ruhet te dosja e raporteve dhe del te lista.</p>
 <div class="${full ? 'warnbox' : 'note'}">Në punë: ${running.length}/${limit} audite njëkohësisht.${full ? ' Kufiri u arrit: prit ose anulo një punë.' : ''} ${running.length ? html`<a href="/jobs">Shiko punët</a>` : ''}</div>
 ${env ? browserBox(env) : ''}
-${env ? html`<div class="row-actions"><span class="note">Raportet ruhen te <span class="code">${env.outputDir}</span>.</span> ${openReportsForm(csrf, '/audit')}</div>` : ''}
+${env ? html`<div class="row-actions"><span class="note">Raportet ruhen te <span class="code">${displayDir(env.outputDir)}</span> (butoni e hap në Explorer).</span> ${openReportsForm(csrf, '/audit')}</div>` : ''}
 <div class="grid forms">
 <section class="panel" id="url"><h2>Audit URL</h2>
 ${state.kind === 'url' ? errorsBox(state.errors) : ''}

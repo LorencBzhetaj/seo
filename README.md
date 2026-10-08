@@ -17,6 +17,33 @@ Opsionale: kopjo `config.example.json` si `config.json` për të ndryshuar kufij
 
 ## Instalimi në Windows (pa Node.js)
 
+### Instaluesi `SEO-Tool-Setup-<version>.exe` (i rekomanduar)
+
+`npm run installer` ndërton te `build/` edhe `SEO-Tool-Setup-<version>.exe`, me SHA-256 te `.exe.sha256`. Ky është instalues i mirëfilltë, pa të drejta administratori (manifest `asInvoker`), i përpiluar me `csc.exe` të .NET Framework 4.x që vjen me Windows 10/11; build-i s'shkarkon asnjë mjet.
+
+- **Instalimi:** zgjedh dosjen (parazgjedhje: instalimi i mëparshëm, ose `%LOCALAPPDATA%\Programs\SEO Tool`). Pastaj nxjerr programin dhe thërret `setup.js install`, që krijon shkurtoren **SEO Tool** në Start Menu (Desktop sipas zgjedhjes) dhe regjistrimin te **Cilësimet > Aplikacionet**.
+- **Përditësimi:** hap versionin e ri. Në dosje tjetër nga ajo e regjistruar, dritarja pyet: **Hiq programin e vjetër**, **Mbaje programin e vjetër** (Start Menu dhe çinstalimi kalojnë te instalimi i ri; pa ndërfaqe: `/KEEPPREVIOUS`) ose **Anulo**.
+- **Përditësim i sigurt për gjithë paketën:**
+  - paketa nxirret e plotë në një dosje anësore `<dosja>.setup-new`, pa prekur programin ekzistues;
+  - vetëm pas nxjerrjes së plotë bëhen dy riemërtime në të njëjtin disk: `<dosja>` → `<dosja>.setup-old`, `<dosja>.setup-new` → `<dosja>`;
+  - skedarët e tu në dosjen e programit (çdo gjë jashtë `runtime\`, `app\` dhe skedarëve `.cmd`/`.txt` të programit) kalojnë te versioni i ri; kopja e vjetër fshihet;
+  - nëse procesi ndërpritet (mbyllje me forcë, rënie e rrymës), programi i vjetër mbetet i plotë. Nisja tjetër e instaluesit fshin nxjerrjen e papërfunduar, ose e rikthen versionin e vjetër nëse ndërprerja ra mes dy riemërtimeve;
+  - nëse dosja e programit s'mund të zhvendoset (p.sh. e mban hapur një dritare tjetër), s'ndryshohet asgjë (kodi 3).
+- **Butonat:** **Anulo** para nisjes mbyll dritaren pa ndryshuar asgjë. Gjatë nxjerrjes, Anulo e ndal instalimin dhe programi ekzistues mbetet siç ishte (kodi 11). Gjatë ndërrimit (disa sekonda) anulimi s'pranohet. Dritarja s'mbyllet gjatë instalimit, dhe Enter s'e nis instalimin.
+- **Programi i hapur:** nëse SEO Tool është i hapur, instaluesi ndalon para çdo ndryshimi (kodi 3).
+- **Mesazhet** tregojnë shtigjet e përdoruesit si `%LOCALAPPDATA%\…` / `%APPDATA%\…`, pa emrin e përdoruesit.
+- **Të dhënat:** te `%LOCALAPPDATA%\SEO Tool` (raportet, pamjet, `config.json`, Search Console) s'preken. Instaluesi s'përmban asnjë raport, kredencial apo të dhënë personale: vetëm Node.js-in dhe programin.
+- **Çinstalimi:** Cilësimet > Aplikacionet > SEO Tool. Të dhënat ruhen si parazgjedhje.
+- **Pa ndërfaqe:** `SEO-Tool-Setup-<version>.exe /S /DIR="C:\Dosja ime\SEO Tool" [/DESKTOP] [/OPEN] [/KEEPPREVIOUS] [/LOG=skedar.log]`.
+  - Kodet: 0 ok · 2 dosje e papranueshme ose argument i panjohur · 3 programi është i hapur ose dosja e zënë · 4 skedarë me shenjë interneti · 5 shkurtorja s'u krijua · 10 nxjerrja ose ndërrimi dështoi · 11 anuluar.
+  - Një shteg me hapësira pa thonjëza refuzohet (kodi 2), që të mos instalohet në dosje tjetër.
+- **I panënshkruar:** `.exe`-ja s'ka nënshkrim code-signing.
+  - Kur shkarkohet nga interneti, Windows SmartScreen mund të shfaqë "Windows protected your PC" (→ More info → Run anyway). Me Smart App Control, Windows mund ta bllokojë.
+  - Në laptopin e provës (Smart App Control **aktiv**), `.exe`-ja u nis si nga build-i ashtu edhe me shenjën "nga interneti" (Zone.Identifier ZoneId=3). Kjo s'garanton të njëjtën sjellje në çdo kompjuter, sepse vendimi i Windows varet edhe nga reputacioni i skedarit.
+  - Krahaso gjithmonë SHA-256: `certutil -hashfile "SEO-Tool-Setup-<version>.exe" SHA256`.
+
+### Paketa ZIP (portative)
+
 Paketa `SEO-Tool-<version>-windows-x64.zip` përmban Node.js-in (i nënshkruar nga OpenJS) dhe programin. S'ka nevojë për PowerShell, Node.js të instaluar veçmas apo të drejta administratori.
 
 1. **Kontrollo burimin.** ZIP-i duhet të vijë nga vendi ku e ruan vetë. Krahaso SHA-256 me vlerën te `SEO-Tool-<version>-windows-x64.zip.sha256` (në cmd):
@@ -130,6 +157,22 @@ Një matje e vetme Lighthouse ndryshon nga një ekzekutim te tjetri. Me `--light
   - **Availability:** kur ndryshon vetëm koha e përgjigjes (TTFB, 1 matje lokale) dhe statusi HTTP, qasja dhe ridrejtimet janë të njëjta, krahasimi tregon "rritje/rënie e matur, kërkon konfirmim" me TTFB-të dhe pragun 800 ms. Gjetja `SLOW_SERVER_RESPONSE` nuk quhet "u zgjidh" pa konfirmim. Ndryshimet e statusit HTTP ose të qasjes mbeten "u përmirësua/u përkeqësua", me shkakun.
 - **Raportet me 1 matje dhe ato të vjetra** nuk kanë `series` dhe hapen si më parë; në krahasim trajtohen si "1 matje, pa interval".
 
+### Lighthouse SEO dhe Agentic Browsing (eksperimentale)
+
+Lighthouse ekzekutohet me kategoritë `performance`, `accessibility`, `best-practices`, `seo` dhe `agentic-browsing`. Dy të fundit ruhen veç te `lighthouse` në raportin JSON, **jashtë Health Score**:
+
+- **`lighthouse.seoCategory`** = "Lighthouse SEO": pika e Lighthouse 0–100 dhe auditet me peshë që s'kaluan. Është e ndarë nga **SEO teknik** i mjetit (`categories.seoTechnical`, në Health).
+- **`lighthouse.agenticBrowsing`**: kategoria eksperimentale e Lighthouse 13.x (u verifikua me 13.5.0 dhe Chrome 154). Kontrollon pemën e aksesueshmërisë për agjentë, WebMCP, `llms.txt`, katalogun ARD dhe CLS.
+  - Rezultati ruhet në formën që e jep Lighthouse (`categoryScoreDisplayMode: "fraction"`): `passed`/`passable` (p.sh. 3/3), `notApplicable`, `informativeNotPassed`, `errors`.
+  - Numërimi është i njëjtë me `calculateCategoryFraction` të Lighthouse: N/A, manual dhe informative s'hyjnë në thyesë.
+  - Për çdo kontroll ruhet `result` (`pass`/`fail`/`not-applicable`/`informative`/`manual`/`error`), `scoreDisplayMode`, `score`, `displayValue`/`explanation`/`errorMessage` dhe deri në 10 rreshta prove.
+  - S'ka pikë 0–100 të shpikur.
+  - Kur Lighthouse e quan një kontroll N/A (p.sh. `llms.txt` mungon me 4xx), s'trajtohet si defekt.
+  - S'krijon gjetje, prandaj Health, kategoritë dhe detyrat s'ndryshojnë.
+  - S'është matje trafiku, renditjeje në Google apo përmendjesh nga AI.
+  - Kur Lighthouse s'u ekzekutua ose versioni s'e ka kategorinë: `{"status": "skipped", "reason": "…"}`.
+- Raportet e vjetra pa këto fusha hapen si më parë; dashboard-i shkruan "s'u mat" / "s'u ruajt", jo 0.
+
 ### Lighthouse NO_NAVSTART (shkak ende i papërcaktuar)
 
 Herë pas here Lighthouse dështon me `NO_NAVSTART`: trace-i i Chrome s'ka eventin `navigationStart` të frame-it kryesor, ndonëse faqja ngarkohet normalisht (HTTP 200, të njëjtat kërkesa). Ndodh edhe me `--no-crawl`, pra s'e shkakton crawl-i. Pse Chrome e humb eventin **s'është përcaktuar ende** (as roli i mundshëm i guard proxy-t). Vetëm për `NO_NAVSTART` / `NO_TRACING_STARTED` bëhet **një** riprovim; çdo përpjekje e dështuar ruhet te `lighthouse.failedAttempts` dhe shfaqet në terminal. Nëse dështojnë të dyja, Health Score del `PARTIAL` dhe `lighthouse.code` e emërton gabimin.
@@ -195,7 +238,7 @@ Në një aplikacion të instaluar, këto duhet të kalojnë te dosja e të dhën
 | Komponenti | Vendimi | Arsyeja |
 |---|---|---|
 | **Node.js runtime** | `runtime\node.exe` brenda paketës (85.7 MB) | Përdoruesi s'instalon Node. Node SEA u përjashtua: ndryshon binarin e nënshkruar, dhe Smart App Control e bllokon |
-| **Instaluesi** | ZIP + `Instalo.cmd` (JS mbi Node-in e paketuar) | Një `Setup.exe` i panënshkruar bllokohet nga Smart App Control (u provua). Nënshkrimi kërkon certifikatë code-signing |
+| **Instaluesi** | `SEO-Tool-Setup-<version>.exe` (C#/.NET Framework 4.x, i përpiluar me `csc.exe` të Windows; thërret `setup.js install`) + ZIP portativ me `Instalo.cmd` | Instalim i zakonshëm me zgjedhje dosjeje, pa administrator dhe pa shkarkuar mjete build-i. I panënshkruar: në laptopin e provës (Smart App Control aktiv) u nis; në kompjutera të tjerë SmartScreen/Smart App Control mund ta bllokojnë. Nënshkrimi kërkon certifikatë code-signing. ZIP-i mbetet alternativa |
 | **Shkurtorja** | `cscript` + WScript.Shell (API zyrtare), e verifikuar duke e lexuar përsëri. Nëse WSH mungon, instalimi del i papërfunduar dhe jepet mënyra pa shkurtore | Pa PowerShell, pa ekzekutues të panënshkruar dhe pa shkurtore të dëmtuar |
 | **Git** | **S'paketohet.** Pa të, dashboard-i jep udhëzim për auditin e repo-ve | Paketa mbetet e vogël |
 | **Chrome / Chromium** | **S'paketohet.** Përdoret Chrome i instaluar ose Edge (pjesë e Windows 10/11; u provua me Lighthouse dhe renderimin) | Chrome for Testing: 196 MB zip; chrome-headless-shell: 115 MB zip. Kjo do ta trefishonte paketën dhe do të kërkonte përditësime sigurie |
@@ -351,6 +394,22 @@ npm run dashboard
 
 Hape te `http://127.0.0.1:4780/`. Opsione: `--out <dir>` (parazgjedhje `output/`) dhe `--port <n>`; me `--port 0` zgjidhet një port i lirë.
 
+**Navigimi** (shirit anësor; në ekran ≤900 px një rresht i vetëm "☰ Menu · faqja aktuale" që hap listën si popover (`popovertarget`, pa JavaScript). Lista ka sfond që errëson përmbajtjen pas saj, mbyllet me Escape ose me klikim jashtë dhe e kthen fokusin te butoni. Është e arritshme me tastierë dhe lexues ekrani; në shfletues pa Popover API shfaqet e hapur poshtë kokës):
+
+- **Përmbledhje** (`/`): për sitin e zgjedhur (`?site=`), nga raporti i tij URL më i fundit:
+  - koka kompakte: siti, data e raportit të fundit me lidhjen te raporti, zgjedhja e sitit dhe "+ Nis audit të ri";
+  - katër tregues, secili me fushën e vet të shkruar: **Health Score** ("Vetëm faqja hyrëse", s'është pikë e gjithë sitit), **Crawl i sitit** (X/Y URL, "I pjesshëm" kur ka kufi), **Klikime në Google** (totali i property-t me periudhën, "të matura, jo parashikim") dhe **Faqe me të dhëna GSC** (të tjerat: pa të dhëna të kthyera, jo zero trafik). Numri dhe fusha ("Vetëm faqja hyrëse", "I pjesshëm") janë gjithmonë të dukshme; poshtë tyre ka një rresht të shkurtër. Sqarimi i gjatë shfaqet në desktop, ndërsa në ekran ≤700 px është te "Sqarim" (details); në celular periudha GSC shkurtohet në "7 ditë", ndërsa datat janë te sqarimi;
+  - "Ku të përqendrohesh tani": 3 detyrat e para, secila me rëndësinë, titullin (lidhje te detyra) dhe një fakt (ku prek · shfaqjet në GSC). Shënimet e kujdesit (p.sh. matja e vetme e Lighthouse) dhe provat për faqet janë te "Shënime dhe prova" (details). Çdo provë jepet e plotë, si bllok kodi që thyhet vetëm te hapësirat (jo te "-" apo "/"); vlerat më të gjera se ekrani lëvizin brenda bllokut, dhe teksti i kopjuar mbetet i njëjtë. Kontrasti i ngjyrave shfaqet si "Kontrast i pamjaftueshëm në N elemente" (N nga gjetja); titulli origjinal i Lighthouse është te detajet dhe te raporti, ndërsa kodi, rëndësia dhe pikëzimi s'ndryshojnë;
+  - "Kërkimet ku shfaqesh": tabelë kompakte (Kërkimi, Shfaqje, Klikime, Poz.), me shënimin për mostrën e vogël; faqet në Google si tabelë;
+  - Lighthouse si tabelë me etiketa shqip (Performanca, Aksesueshmëria, Praktikat e mira, SEO sipas Lighthouse, Shfletimi nga agjentë AI); emri origjinal është në `title` dhe te raporti;
+  - "Mbulimi dhe besueshmëria".
+
+  S'ka grafikë apo prirje, sepse s'ka seri kohore. "Pa të dhëna të kthyera" s'shfaqet kurrë si 0.
+- **Raportet** (`/reports`), **Detyrat** (`/tasks` → detyrat e raportit URL më të fundit), **Search Console**, **Krahaso**, **Nis audit**, **Punët në proces**.
+- **Faqe të gjata:** te Detyrat, çdo zonë është seksion që hapet sipas nevojës (i hapur: zona e parë me detyra, ose zona e filtruar). Te Krahaso, listat e gjata (mbi 6 rreshta, "S'krahasohen", "Mbetën") janë të mbyllura me numrin në titull; paralajmërimi "Kujdes para leximit" mbetet gjithmonë i dukshëm. Në celular tabelat kryesore bëhen kartela dhe teksti shpjegues i Përmbledhjes fshihet, që numrat të lexohen pa lëvizje anash.
+- Sidebar-i ka vetëm treguesin **Vetëm lokal**; shpjegimi i plotë hapet me tastierë ose lexues ekrani (details), edhe nga menuja në celular.
+- Faqet kanë lidhjen "Kalo te përmbajtja" dhe fokus të dukshëm nga tastiera. CSP mbetet e njëjtë (`style-src 'self'`, `script-src 'none'`): shiritat e kartave përdorin klasa, jo stile inline.
+
 - **Lista:** data, siti/burimi, lloji (URL, dosje, repo), Health e faqes hyrëse dhe dy kolona të ndara:
   - **Auditi** (`status`): *i përfunduar* kur u kryen modulet; *i pjesshëm* kur disa u anashkaluan.
   - **Crawl-i**: faqet e kontrolluara nga ato të zbuluara, p.sh. `25/81 faqe · crawl i pjesshëm`.
@@ -422,7 +481,10 @@ Faqja **Search Console** (`/gsc`) lidh dashboard-in me llogarinë tënde Google 
 - Programi i instaluar përdor `gsc` brenda dosjes së tij të të dhënave (`%LOCALAPPDATA%\SEO Tool`, ose `SEO_TOOL_DATA`), kurrë dosjen e përkohshme. Dosja mund të ndryshohet me variablin `SEO_TOOL_GSC_DIR`. Faqja e shfaq shtegun pa emrin e përdoruesit (`%LOCALAPPDATA%\…`).
 - Çinstalimi me fshirje të të dhënave e heq edhe `gsc`, por nuk e revokon token-in te Google: përdor më parë **Shkëput llogarinë**.
 - Token-at nuk shkruhen në raporte, log-e apo faqe; `client_id` shfaqet i shkurtuar.
-- **Shkëput llogarinë** i kërkon Google-it revokimin e token-it dhe e fshin token-in lokalisht. Mesazhi thotë "Google konfirmoi revokimin" vetëm kur Google kthen sukses; përndryshe thotë që kredencialet lokale u fshinë, por revokimi nuk u konfirmua (kontrollo te myaccount.google.com/permissions). Përgjigjja e Google (statusi HTTP dhe kodi i gabimit, pa token) ruhet te `gsc/revoke.json` dhe shfaqet te "Shkëputja e fundit". Periudhat e ruajtura mbeten pas shkëputjes dhe hapen pa lidhje. **Fshi të dhënat e GSC** heq periudhat e ruajtura. **Fshi gjithçka të GSC** heq edhe klientin.
+- **Shkëput llogarinë** i kërkon Google-it revokimin e token-it dhe e fshin token-in lokalisht. Mesazhi thotë "Google konfirmoi revokimin" vetëm kur Google kthen sukses; përndryshe thotë që kredencialet lokale u fshinë, por revokimi nuk u konfirmua (kontrollo te myaccount.google.com/permissions). Përgjigjja e Google (statusi HTTP dhe kodi i gabimit, pa token) ruhet te `gsc/revoke.json` dhe shfaqet te "Shkëputja e fundit". Periudhat e ruajtura mbeten pas shkëputjes dhe hapen pa lidhje.
+- **Fshirjet** janë në zonën më vete "Fshirja e të dhënave lokale", poshtë faqes: **Fshi periudhat…** heq periudhat e ruajtura; **Fshi gjithçka…** heq edhe klientin OAuth dhe token-in (pas kërkesës për revokim). Secila hap një faqe konfirmimi (çfarë fshihet, çfarë mbetet, **Po, fshi…** ose **Anulo**). Një POST pa konfirmimin të çon te kjo faqe, jo te fshirja.
+- **Faqja** nis me gjendjen (llogaria, klienti, ruajtja lokale), veprimet, marrjen e të dhënave dhe periudhat e ruajtura. Kur ka periudha ose klient, 7 hapat dhe importi i klientit janë te seksioni i mbyllur **Konfiguro ose lidh llogarinë**. Kur dosja e GSC s'është parazgjedhja (p.sh. `SEO_TOOL_GSC_DIR`), shtegu shënohet "dosje e konfiguruar, jo parazgjedhja".
+- **Në celular** (≤700 px), tabelat e faqeve/query-ve bëhen kartela (Klikime, Impressions, CTR, Poz. mes.) pa lëvizje anash; filtrat, faqosja dhe shënimi "pa të dhëna të kthyera ≠ zero trafik" mbeten.
 
 **Të dhënat dhe kufijtë:**
 - Property zgjidhet nga lista e llogarisë; nuk pranohet vlerë arbitrare.

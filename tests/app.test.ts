@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildVerifiedShortcut, expandEnv, installDirProblem, motwInstructions, noShortcutInstructions, OWNED, parseRegExport, pruneStale, ShortcutError } from '../src/app/setup.js';
+import { buildVerifiedShortcut, expandEnv, installDirProblem, motwInstructions, noShortcutInstructions, OWNED, parseRegExport, pruneStale, ShortcutError, shownPath } from '../src/app/setup.js';
 import { findBrowser, noBrowserReason } from '../src/core/browser.js';
 import { dashboardInstanceId, startDashboard, type Dashboard } from '../src/dashboard/server.js';
 import { startFixtureSite, type FixtureSite } from './fixture-site.js';
@@ -69,7 +69,7 @@ describe('Shfletuesi për Lighthouse: Chrome i instaluar, pastaj Edge, pa paketi
     const opened: string[] = [];
     const d = await startDashboard({ outputDir: out, port: 0, gitAvailable: () => false, findBrowser: () => ({}), openFolder: (dir) => opened.push(dir) });
     const origin = d.url.replace(/\/$/, '');
-    const list = await (await fetch(d.url)).text();
+    const list = await (await fetch(`${d.url}reports`)).text();
     expect(list).toContain('action="/open-reports"');
     const post = (form: Record<string, string>, headers: Record<string, string> = {}) =>
       fetch(`${d.url}open-reports`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin, ...headers }, body: new URLSearchParams(form) });
@@ -81,7 +81,7 @@ describe('Shfletuesi për Lighthouse: Chrome i instaluar, pastaj Edge, pa paketi
     expect(ok.headers.get('location')).toBe('/audit');
     expect(opened).toEqual([out]); // shtegu nga kërkesa injorohet
     expect(fs.existsSync(out)).toBe(true);
-    expect((await post({ token: d.csrf, back: 'https://evil.example/' })).headers.get('location')).toBe('/');
+    expect((await post({ token: d.csrf, back: 'https://evil.example/' })).headers.get('location')).toBe('/reports');
 
     const form = await (await fetch(`${d.url}audit`)).text();
     expect(form).toContain('id="pa-git"');
@@ -129,6 +129,13 @@ describe('Instalimi: dosja, shkurtorja e verifikuar, shënimi nga interneti, pë
     expect(installDirProblem('C:\\Users\\a\\AppData\\Local', opts)).toMatch(/dosja e raporteve/);
     expect(installDirProblem('\\\\server\\share\\SEO Tool', opts)).toMatch(/rrjetit/);
     expect(installDirProblem('C:\\100%\\SEO Tool', opts)).toMatch(/karaktere/);
+    // Mesazhet e instalimit (dritarja e Setup.exe) s'tregojnë emrin e përdoruesit.
+    const env = { LOCALAPPDATA: 'C:\\Users\\Emri\\AppData\\Local', APPDATA: 'C:\\Users\\Emri\\AppData\\Roaming' };
+    expect(shownPath('C:\\Users\\Emri\\AppData\\Local\\SEO Tool', env, 'C:\\Users\\Emri')).toBe('%LOCALAPPDATA%\\SEO Tool');
+    expect(shownPath('C:\\Users\\emri\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\SEO Tool.lnk', env, 'C:\\Users\\Emri')).toBe('%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\SEO Tool.lnk');
+    expect(shownPath('C:\\Users\\Emri\\Desktop\\SEO Tool.lnk', env, 'C:\\Users\\Emri')).toBe('%USERPROFILE%\\Desktop\\SEO Tool.lnk');
+    expect(shownPath('C:\\Users\\Emri2\\x', env, 'C:\\Users\\Emri')).toBe('C:\\Users\\Emri2\\x');
+    expect(shownPath('C:\\Users\\Public\\Seo app\\SEO Tool', env, 'C:\\Users\\Emri')).toBe('C:\\Users\\Public\\Seo app\\SEO Tool');
     // Regjistri lexohet nga `reg export` (UTF-16): ë/ç dhe \ / " të escape-uara ruhen saktë.
     const reg = '\uFEFFWindows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\X]\r\n"DisplayName"="SEO Tool"\r\n"InstallLocation"="C:\\\\Programe ë ç\\\\SEO Tool"\r\n"UninstallString"="\\"C:\\\\a b\\\\node.exe\\" uninstall"\r\n';
     expect(parseRegExport(reg, 'InstallLocation')).toBe('C:\\Programe ë ç\\SEO Tool');

@@ -433,7 +433,7 @@ describe('GSC në dashboard: lidhja, të dhënat, detyrat, dalja', () => {
     // detyra me 2 URL: shuma e tyre, e zbërthyer, jo totali unik i property-t
     expect(t.body).toContain('GSC: Σ 1 500 impressions (2 URL)');
     expect(t.body).toContain("S'është totali unik i property-t (9 000 impressions për periudhën)");
-    expect(t.body).toContain('Shuma (2 URL)</td><td class="num">12</td><td class="num">1 500</td>');
+    expect(t.body).toContain('Shuma (2 URL)</td><td class="num" data-label="Klikime">12</td><td class="num" data-label="Impressions">1 500</td>');
     expect(t.body).not.toContain("mjeti s'ka të dhëna Search Console");
     // filtrat: seksioni dhe rëndësia; paralajmërimi i mbulimit mbetet
     const fl = await get(`/report/${REPORT}/tasks?area=site&sev=medium`);
@@ -470,9 +470,18 @@ describe('GSC në dashboard: lidhja, të dhënat, detyrat, dalja', () => {
     expect(new URLSearchParams(revoke.body).get('token')).toBe(REFRESH);
     expect(store.loadToken()).toBeUndefined();
     expect(store.listDatasets()).toHaveLength(1);
-    expect((await post('/gsc/delete-data')).location).toBe('/gsc?msg=data-deleted');
+    // pa konfirmim: te faqja e konfirmimit, asgjë s'fshihet
+    expect((await post('/gsc/delete-data')).location).toBe('/gsc/confirm?what=data');
+    expect(store.listDatasets()).toHaveLength(1);
+    const conf = await get('/gsc/confirm?what=data');
+    expect(conf.body).toContain('Po, fshi periudhat');
+    expect(conf.body).toContain('name="confirm" value="po"');
+    expect(conf.body).toContain('href="/gsc">Anulo</a>');
+    expect((await post('/gsc/delete-data', { confirm: 'po' })).location).toBe('/gsc?msg=data-deleted');
     expect(store.listDatasets()).toHaveLength(0);
-    expect((await post('/gsc/delete-all')).location).toBe('/gsc?msg=all-deleted-none'); // token-i u hoq më sipër
+    expect((await post('/gsc/delete-all')).location).toBe('/gsc/confirm?what=all');
+    expect(fs.existsSync(store.dir)).toBe(true);
+    expect((await post('/gsc/delete-all', { confirm: 'po' })).location).toBe('/gsc?msg=all-deleted-none'); // token-i u hoq më sipër
     expect(fs.existsSync(store.dir)).toBe(false);
     expect((await get('/gsc')).body).toContain("s'është importuar");
   });
@@ -583,7 +592,7 @@ describe('GSC në dashboard: revokimi i pakonfirmuar dhe etiketa Demo', () => {
     expect(t.g.calls.filter((c) => c.url === REVOKE_URL)).toHaveLength(before);
     // fshi gjithçka me revokim të pakonfirmuar
     withToken(t.store);
-    expect((await t.post('/gsc/delete-all')).location).toBe('/gsc?msg=all-deleted-local');
+    expect((await t.post('/gsc/delete-all', { confirm: 'po' })).location).toBe('/gsc?msg=all-deleted-local');
     expect(fs.existsSync(t.store.dir)).toBe(false);
   });
 

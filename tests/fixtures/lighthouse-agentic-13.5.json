@@ -1,0 +1,113 @@
+{
+ "lighthouseVersion": "13.5.0",
+ "note": "Pjesa agentic-browsing nga një LHR reale (Lighthouse 13.5.0, Chrome 154, 2026-10-03); pa URL.",
+ "categories": {
+  "agentic-browsing": {
+   "title": "Agentic Browsing",
+   "description": "These checks ensure high-quality, [browsable websites for AI agents](https://goo.gle/lighthouse-agentic-web) and validate the correctness of WebMCP integrations. This category is still under development and subject to change.",
+   "supportedModes": [
+    "navigation",
+    "snapshot"
+   ],
+   "categoryScoreDisplayMode": "fraction",
+   "auditRefs": [
+    {
+     "id": "agent-accessibility-tree",
+     "weight": 1,
+     "group": "agent-accessibility"
+    },
+    {
+     "id": "webmcp-form-coverage",
+     "weight": 0,
+     "group": "webmcp"
+    },
+    {
+     "id": "webmcp-registered-tools",
+     "weight": 0,
+     "group": "webmcp"
+    },
+    {
+     "id": "webmcp-schema-validity",
+     "weight": 0,
+     "group": "webmcp"
+    },
+    {
+     "id": "cumulative-layout-shift",
+     "weight": 1,
+     "acronym": "CLS"
+    },
+    {
+     "id": "llms-txt",
+     "weight": 1,
+     "group": "agent-discoverability"
+    },
+    {
+     "id": "ard-schema",
+     "weight": 0,
+     "group": "agent-discoverability"
+    }
+   ],
+   "id": "agentic-browsing",
+   "score": 1
+  }
+ },
+ "audits": {
+  "agent-accessibility-tree": {
+   "id": "agent-accessibility-tree",
+   "title": "Accessibility tree is well-formed",
+   "description": "A well-formed [accessibility tree](https://developer.chrome.com/docs/lighthouse/agentic-browsing/accessibility-for-agents) helps AI agents to navigate and interact with the page.",
+   "score": 1,
+   "scoreDisplayMode": "binary",
+   "displayValue": "All audits passed"
+  },
+  "webmcp-form-coverage": {
+   "id": "webmcp-form-coverage",
+   "title": "WebMCP form coverage",
+   "description": "Consider adding [WebMCP](https://developer.chrome.com/docs/ai/webmcp) annotations to the forms listed below. This helps AI agents identify and interact with these forms more reliably.",
+   "score": null,
+   "scoreDisplayMode": "notApplicable"
+  },
+  "webmcp-registered-tools": {
+   "id": "webmcp-registered-tools",
+   "title": "WebMCP tools registered",
+   "description": "Lists the [WebMCP tools](https://developer.chrome.com/docs/ai/webmcp) registered at the time of analysis.",
+   "score": null,
+   "scoreDisplayMode": "notApplicable"
+  },
+  "webmcp-schema-validity": {
+   "id": "webmcp-schema-validity",
+   "title": "WebMCP schemas are valid",
+   "description": "Valid [WebMCP schemas](https://developer.chrome.com/docs/ai/webmcp) are required for AI agents to understand and interact with tools correctly. Please fix any errors or warnings reported by the browser.",
+   "score": null,
+   "scoreDisplayMode": "notApplicable"
+  },
+  "cumulative-layout-shift": {
+   "id": "cumulative-layout-shift",
+   "title": "Cumulative Layout Shift",
+   "description": "Cumulative Layout Shift measures the movement of visible elements within the viewport. [Learn more about the Cumulative Layout Shift metric](https://web.dev/articles/cls).",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 0,
+   "numericUnit": "unitless",
+   "displayValue": "0",
+   "scoringOptions": {
+    "p10": 0.1,
+    "median": 0.25
+   }
+  },
+  "llms-txt": {
+   "id": "llms-txt",
+   "title": "llms.txt follows recommendations",
+   "description": "If your llms.txt file does not follow recommendations, large language models may not be able to understand how you want your website to be crawled or used for training. The [llms.txt](https://llmstxt.org/) file should be a Markdown file containing at least one H1 header. [Learn more about the llms.txt audit](https://developer.chrome.com/docs/lighthouse/agentic-browsing/llms-txt).",
+   "score": 1,
+   "scoreDisplayMode": "binary"
+  },
+  "ard-schema": {
+   "id": "ard-schema",
+   "title": "`ai-catalog.json` schema is valid",
+   "description": "Valid `ai-catalog.json` manifests are required for autonomous AI agents and registries to discover and verify your resources. [Learn more about the ARD specification](https://agenticresourcediscovery.org/spec/).",
+   "score": null,
+   "scoreDisplayMode": "notApplicable"
+  }
+ }
+}

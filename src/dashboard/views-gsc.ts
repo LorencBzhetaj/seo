@@ -13,6 +13,8 @@ export interface GscViewState {
   csrf: string;
   /** Shtegu i ruajtjes për t'u shfaqur (pa emrin e përdoruesit, p.sh. %LOCALAPPDATA%\SEO Tool\gsc). */
   dir: string;
+  /** Dosja e GSC s'është parazgjedhja (p.sh. SEO_TOOL_GSC_DIR): thuhet qartë, që një kopje prove të mos duket si vendndodhja e përdoruesit. */
+  dirConfigured?: boolean;
   /** Dashboard-i me Google të simuluar (demonstrim): çdo faqe GSC e thotë dukshëm. */
   demo?: boolean;
   protection: Protection;
@@ -54,7 +56,8 @@ export const STATE_CHIPS = {
 };
 
 function metricsCells(m: Metrics): SafeHtml {
-  return html`<td class="num">${n0(m.clicks)}</td><td class="num">${n0(m.impressions)}</td><td class="num">${pct(m.ctr)}</td><td class="num">${pos(m.position)}</td>`;
+  // data-label: në ekran të ngushtë tabela bëhet karta, me etiketën para çdo vlere (CSS, pa JavaScript).
+  return html`<td class="num" data-label="Klikime">${n0(m.clicks)}</td><td class="num" data-label="Impressions">${n0(m.impressions)}</td><td class="num" data-label="CTR">${pct(m.ctr)}</td><td class="num" data-label="Poz. mes.">${pos(m.position)}</td>`;
 }
 
 /** Katër kartat e totalit; pa rresht nga API-ja → "pa të dhëna të kthyera" (jo 0). */
@@ -84,35 +87,52 @@ function revokeText(r: RevokeRecord): SafeHtml {
 export function gscBody(s: GscViewState): SafeHtml {
   const connected = !!s.token;
   const conn = connected ? STATE_CHIPS.connected : s.client ? STATE_CHIPS.disconnected : STATE_CHIPS.noClient;
+  // Konfigurimi (7 hapat + importi) mbetet i hapur vetëm kur s'ka ende as klient, as periudha të ruajtura.
+  const setupOpen = !s.client && !s.datasets.length;
+  const hasLocal = !!(s.client || connected || s.datasets.length);
   return html`<h1>${demoBadge(s.demo)}Google Search Console</h1>
 ${s.demo ? DEMO_BANNER : ''}
 <p class="chips">${conn}${s.datasets.length ? STATE_CHIPS.local(s.datasets.length) : ''}</p>
-<p class="sub">Vetëm lexim (scope <span class="code">webmasters.readonly</span>). Të dhënat merren direkt nga Google në këtë kompjuter; s'dërgohen askund tjetër dhe s'ndryshojnë Health Score ose rëndësinë e gjetjeve.</p>
 ${s.message ? html`<div class="warnbox" role="status">${s.message}</div>` : ''}
 ${s.error ? html`<div class="warnbox errors" role="alert">${s.error}</div>` : ''}
+<section class="panel" id="gjendja"><h2>Gjendja</h2><dl class="kv">
+<dt>Llogaria</dt><dd>${connected ? html`${STATE_CHIPS.connected} që nga ${utc(s.token!.connectedAt)}` : STATE_CHIPS.disconnected}</dd>
+<dt>Klienti OAuth</dt><dd>${s.client ? html`importuar: <span class="code">${s.client.clientId}</span>${s.client.projectId ? html` · projekti <span class="code">${s.client.projectId}</span>` : ''}` : html`<span class="miss">s'është importuar</span>`}</dd>
+${s.lastRevoke ? html`<dt>Shkëputja e fundit</dt><dd>${revokeText(s.lastRevoke)}</dd>` : ''}
+<dt>Ruajtja lokale</dt><dd><span class="code">${s.dir}</span>${s.dirConfigured ? html` <span class="badge b-warning">dosje e konfiguruar, jo parazgjedhja</span>` : ''}<div class="note">Sekretet: ${PROTECTION_TEXT[s.protection]}. Jashtë Git dhe jashtë dosjes së raporteve.</div></dd>
+</dl>
+<div class="actions">
+${s.client && !connected ? html`<form class="inline" method="post" action="/gsc/connect">${token(s.csrf)}<button type="submit">Lidh llogarinë Google</button></form>` : ''}
+${connected ? html`<a class="btn ghost" href="#merr">Merr të dhëna</a><form class="inline" method="post" action="/gsc/disconnect">${token(s.csrf)}<button type="submit" class="secondary">Shkëput llogarinë</button></form>` : ''}
+${!s.client ? html`<a class="btn ghost" href="#konfigurimi">Konfiguro klientin OAuth</a>` : ''}
+</div>
+<p class="note">"Shkëput" i kërkon Google-it revokimin e token-it dhe e fshin token-in lokalisht; mesazhi thotë nëse Google e konfirmoi. Periudhat e ruajtura mbeten dhe hapen pa lidhje.</p></section>
 ${connected ? fetchPanel(s) : ''}
 ${datasetsPanel(s.datasets, connected)}
-<div class="grid">
-<section class="panel"><h2>Gjendja</h2><dl class="kv">
-<dt>Klienti OAuth</dt><dd>${s.client ? html`importuar: <span class="code">${s.client.clientId}</span>${s.client.projectId ? html` · projekti <span class="code">${s.client.projectId}</span>` : ''}` : html`<span class="miss">s'është importuar</span>`}</dd>
-<dt>Llogaria</dt><dd>${connected ? html`${STATE_CHIPS.connected} që nga ${utc(s.token!.connectedAt)}` : STATE_CHIPS.disconnected}</dd>
-${s.lastRevoke ? html`<dt>Shkëputja e fundit</dt><dd>${revokeText(s.lastRevoke)}</dd>` : ''}
-<dt>Ruajtja lokale</dt><dd><span class="code">${s.dir}</span><div class="note">Sekretet: ${PROTECTION_TEXT[s.protection]}. Jashtë Git dhe jashtë dosjes së raporteve.</div></dd>
-<dt>Të dhëna të ruajtura</dt><dd>${String(s.datasets.length)} periudha${s.datasets.length ? html` · <a href="#periudhat">shiko</a>` : ''}</dd>
-</dl>
-<div class="row-actions">
-${s.client && !connected ? html`<form class="inline" method="post" action="/gsc/connect">${token(s.csrf)}<button type="submit">Lidh llogarinë Google</button></form>` : ''}
-${connected ? html`<form class="inline" method="post" action="/gsc/disconnect">${token(s.csrf)}<button type="submit" class="danger">Shkëput llogarinë</button></form>` : ''}
-${s.datasets.length ? html`<form class="inline" method="post" action="/gsc/delete-data">${token(s.csrf)}<button type="submit" class="secondary">Fshi të dhënat e GSC</button></form>` : ''}
-${s.client || connected || s.datasets.length ? html`<form class="inline" method="post" action="/gsc/delete-all">${token(s.csrf)}<button type="submit" class="secondary">Fshi gjithçka të GSC</button></form>` : ''}
-</div>
-<p class="note">"Shkëput" i kërkon Google-it revokimin e token-it dhe e fshin token-in lokalisht; mesazhi pas veprimit thotë nëse Google e konfirmoi revokimin. Periudhat e ruajtura mbeten dhe hapen pa lidhje. "Fshi të dhënat" heq periudhat e ruajtura. "Fshi gjithçka" heq edhe klientin OAuth (me të njëjtën kërkesë revokimi, nëse ka token).</p></section>
-
-<section class="panel"><details class="setup" ${s.client ? '' : html`open`}><summary><h2>Konfigurimi (një herë)</h2>${s.client ? html` <span class="note">klienti është importuar; hape për ta zëvendësuar</span>` : ''}</summary>${SETUP}
+<details class="panel" id="konfigurimi" ${setupOpen ? html`open` : ''}><summary><h2>Konfiguro ose lidh llogarinë</h2> <span class="note">${s.client ? 'klienti është importuar; hape për ta zëvendësuar ose për hapat' : '7 hapa, një herë'}</span></summary>${SETUP}
 <form method="post" action="/gsc/client">${token(s.csrf)}
 <label class="field">Përmbajtja e client_secret_….json (Desktop app)<textarea name="json" rows="5" maxlength="4000" spellcheck="false" autocomplete="off"></textarea></label>
-<button type="submit">Importo klientin</button></form></details></section>
-</div>`;
+<button type="submit">Importo klientin</button></form></details>
+${hasLocal ? html`<section class="panel danger" id="fshirja"><h2>Fshirja e të dhënave lokale</h2>
+<p class="note">Çdo fshirje kërkon konfirmim në faqen pasuese. S'prek raportet e auditeve.</p>
+<ul class="danger-list">
+${s.datasets.length ? html`<li><div><strong>Fshi periudhat e ruajtura</strong><div class="note">Heq ${String(s.datasets.length)} periudha të marra nga Search Console. Lidhja dhe klienti OAuth mbeten.</div></div><a class="btn danger-ghost" href="/gsc/confirm?what=data">Fshi periudhat…</a></li>` : ''}
+<li><div><strong>Fshi gjithçka të Search Console</strong><div class="note">Revokon token-in (nëse ka), fshin klientin OAuth, token-in dhe periudhat nga ky kompjuter.</div></div><a class="btn danger-ghost" href="/gsc/confirm?what=all">Fshi gjithçka…</a></li>
+</ul></section>` : ''}`;
+}
+
+/** Faqja e konfirmimit për fshirjet (pa JavaScript: një hap më shumë, me shpjegim dhe "Anulo"). */
+export function confirmDeleteBody(csrf: string, what: 'data' | 'all', datasets: number): SafeHtml {
+  const all = what === 'all';
+  return html`<p class="crumb"><a href="/gsc">Search Console</a> · konfirmim</p>
+<h1>${all ? 'Të fshihet gjithçka e Search Console?' : 'Të fshihen periudhat e ruajtura?'}</h1>
+<section class="panel danger"><dl class="kv">
+<dt>Fshihet</dt><dd>${all ? html`klienti OAuth, token-i (pas kërkesës për revokim te Google) dhe ${String(datasets)} periudha` : html`${String(datasets)} periudha të marra nga Search Console`}</dd>
+<dt>Mbetet</dt><dd>${all ? 'raportet e auditeve' : 'raportet e auditeve, klienti OAuth dhe lidhja me llogarinë'}</dd>
+</dl>
+<p class="note">Veprimi s'mund të kthehet mbrapsht; periudhat mund të merren sërish nga Google kur llogaria është e lidhur.</p>
+<div class="actions"><form class="inline" method="post" action="/gsc/${all ? 'delete-all' : 'delete-data'}">${token(csrf)}<input type="hidden" name="confirm" value="po"><button type="submit" class="danger">${all ? 'Po, fshi gjithçka' : 'Po, fshi periudhat'}</button></form>
+<a class="btn ghost" href="/gsc">Anulo</a></div></section>`;
 }
 
 function fetchPanel(s: GscViewState): SafeHtml | '' {
@@ -135,13 +155,13 @@ function datasetsPanel(list: GscDataset[], connected: boolean): SafeHtml | '' {
   const sorted = [...list].sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt));
   return html`<section class="panel" id="periudhat"><h2>Të dhëna të ruajtura lokalisht <span class="note">(${String(list.length)} periudha)</span></h2>
 <p class="note">${connected ? 'Të marra më parë nga Search Console dhe të ruajtura në këtë kompjuter.' : "Llogaria s'është e lidhur: këto periudha u morën më parë dhe hapen pa lidhje; s'përditësohen derisa të lidhesh sërish."}</p>
-<div class="tablewrap"><table class="keep"><thead><tr><th>Property</th><th>Periudha</th><th>Marrë më</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">Faqe</th><th>Krahasimi me të mëparshmen</th><th><span class="sr">Veprimi</span></th></tr></thead><tbody>
+<div class="tablewrap"><table class="keep cardify"><thead><tr><th>Property</th><th>Periudha</th><th>Marrë më</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">Faqe</th><th>Krahasimi me të mëparshmen</th><th><span class="sr">Veprimi</span></th></tr></thead><tbody>
 ${sorted.map((d) => {
     const prev = sorted.find((x) => x !== d && x.property === d.property && x.endDate < d.startDate);
     const cmp = prev ? compareDatasets(prev, d) : null;
-    return html`<tr><td>${demoBadge(d.demo)}<span class="code">${d.property}</span></td><td class="nowrap">${d.startDate} – ${d.endDate}</td><td class="nowrap">${utc(d.fetchedAt)}</td>
-<td class="num">${d.totals ? n0(d.totals.clicks) : html`<span class="note">pa të dhëna</span>`}</td><td class="num">${d.totals ? n0(d.totals.impressions) : html`<span class="note">pa të dhëna</span>`}</td><td class="num">${String(d.pages.length)}${d.pagesTruncated ? '+' : ''}</td>
-<td class="note">${cmp ? (cmp.comparable ? 'krahasohet' : `s'krahasohet: ${cmp.reasons.join('; ')}`) : '—'}</td><td><a href="/gsc/data/${d.id}">Hap<span class="sr"> ${d.property} ${d.startDate} – ${d.endDate}</span></a></td></tr>`;
+    return html`<tr><td class="lead">${demoBadge(d.demo)}<span class="code">${d.property}</span></td><td class="nowrap" data-label="Periudha">${d.startDate} – ${d.endDate}</td><td class="nowrap" data-label="Marrë më">${utc(d.fetchedAt)}</td>
+<td class="num" data-label="Klikime">${d.totals ? n0(d.totals.clicks) : html`<span class="note">pa të dhëna të kthyera</span>`}</td><td class="num" data-label="Impressions">${d.totals ? n0(d.totals.impressions) : html`<span class="note">pa të dhëna të kthyera</span>`}</td><td class="num" data-label="Faqe">${String(d.pages.length)}${d.pagesTruncated ? '+' : ''}</td>
+<td class="note wide" data-label="Krahasimi">${cmp ? (cmp.comparable ? 'krahasohet' : `s'krahasohet: ${cmp.reasons.join('; ')}`) : '—'}</td><td class="wide"><a href="/gsc/data/${d.id}">Hap<span class="sr"> ${d.property} ${d.startDate} – ${d.endDate}</span></a></td></tr>`;
   })}
 </tbody></table></div></section>`;
 }
@@ -227,15 +247,15 @@ ${match ? html`<input type="hidden" name="report" value="${match.report}">` : ''
 
 <section class="panel" id="faqet"><h2>Faqet</h2>
 <p class="note counts">${countText(d.pages.length, pagesAll.length, !!pf, P.from, P.to)}${d.pagesTruncated ? html` <span class="badge b-warning">lista e kufizuar nga API</span>` : ''}</p>
-<div class="tablewrap"><table class="keep"><thead><tr><th>Faqja</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
+<div class="tablewrap"><table class="keep cardify"><thead><tr><th>Faqja</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
 ${P.slice.map((p) => html`<tr><td class="url">${externalLink(p.page)}</td>${metricsCells(p)}</tr>`)}
 </tbody></table></div>${pager(P, 'pp', '#faqet', 'Faqet e tabelës së faqeve')}</section>
 
 <section class="panel" id="kerkimet"><h2>Kërkimet sipas faqes</h2>
 <p class="note counts">${countText(d.queries.length, queriesAll.length, !!(pf || qf), Q.from, Q.to)}${d.queriesTruncated ? html` <span class="badge b-warning">lista e kufizuar nga API</span>` : ''}</p>
 <p class="note">S'janë të gjitha kërkimet: API-ja s'kthen kërkimet anonime dhe kufizon rreshtat. Renditja këtu: sipas impressions.</p>
-<div class="tablewrap"><table class="keep"><thead><tr><th>Kërkimi</th><th>Faqja</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
-${Q.slice.map((x) => html`<tr><td>${truncate(x.query, 80)}</td><td class="note url">${truncate(x.page, 70)}</td>${metricsCells(x)}</tr>`)}
+<div class="tablewrap"><table class="keep cardify"><thead><tr><th>Kërkimi</th><th>Faqja</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
+${Q.slice.map((x) => html`<tr><td class="lead">${truncate(x.query, 80)}</td><td class="note url" data-label="Faqja">${truncate(x.page, 70)}</td>${metricsCells(x)}</tr>`)}
 </tbody></table></div>${pager(Q, 'qp', '#kerkimet', 'Faqet e tabelës së kërkimeve')}</section>`;
 }
 
@@ -253,8 +273,8 @@ export function exposureBreakdown(e: TaskExposure, propertyTotal: Metrics | null
   const rows = e.pages.filter((p) => p.status === 'data' && p.row).sort((a, b) => b.row!.impressions - a.row!.impressions);
   if (!rows.length || !e.metrics) return '';
   return html`<p class="note">${rows.length > 1 ? `Shuma e impressions të ${rows.length} URL-ve të detyrës që kanë të dhëna. ` : ''}S'është totali unik i property-t${propertyTotal ? ` (${n0(propertyTotal.impressions)} impressions për periudhën)` : ''}: një kërkim mund të shfaqë disa faqe, prandaj shuma e faqeve mund ta kalojë totalin. Mat faqet e listuara në detyrë; kur detyra lidhet me një URL tjetër (p.sh. URL që ridrejton, e linkuar nga këto faqe), s'mat trafikun e asaj URL-je.</p>
-<div class="tablewrap"><table class="keep"><thead><tr><th>URL</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
+<div class="tablewrap"><table class="keep cardify"><thead><tr><th>URL</th><th class="num">Klikime</th><th class="num">Impressions</th><th class="num">CTR</th><th class="num">Poz. mes.</th></tr></thead><tbody>
 ${rows.map((p) => html`<tr><td class="url">${externalLink(p.url)}</td>${metricsCells(p.row!)}</tr>`)}
-${rows.length > 1 ? html`<tr class="sum"><td>Shuma (${String(rows.length)} URL)</td>${metricsCells(e.metrics)}</tr>` : ''}
+${rows.length > 1 ? html`<tr class="sum"><td class="lead">Shuma (${String(rows.length)} URL)</td>${metricsCells(e.metrics)}</tr>` : ''}
 </tbody></table></div>`;
 }

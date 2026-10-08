@@ -9,6 +9,7 @@ import type { PixelDiffResult, VisualCompare } from './visual-compare.js';
 import { visualCompareBody, visualComparePanel } from './views-visual-compare.js';
 import { buildTasks } from './tasks.js';
 import { seriesOf, type SeriesCompare } from './lh-series.js';
+import { lhPanel } from './views-lh.js';
 import { seriesComparePanel, seriesPanel } from './views-series.js';
 import { blockedWarning, tasksBody, tasksHref, tasksPanel, type TasksFilter, type TasksGsc } from './views-tasks.js';
 
@@ -42,14 +43,50 @@ const badge = (cls: string, text: string) => html`<span class="badge b-${cls}">$
 const sevBadge = (s: Sev) => html`<span class="badge sev-${s}">${SEV_LABELS[s]}</span>`;
 const scoreText = (n: number | null) => (n === null ? '—' : String(n));
 
-/** refreshSeconds: rifreskim me <meta refresh> (pa JavaScript) për punët në ekzekutim. */
-export function layout(title: string, body: SafeHtml, refreshSeconds?: number): string {
+export type NavKey = 'overview' | 'reports' | 'tasks' | 'gsc' | 'compare' | 'audit' | 'jobs';
+const NAV: [NavKey, string, string][] = [
+  ['overview', '/', 'Përmbledhje'],
+  ['reports', '/reports', 'Raportet'],
+  ['tasks', '/tasks', 'Detyrat'],
+  ['gsc', '/gsc', 'Search Console'],
+  ['compare', '/compare', 'Krahaso'],
+];
+const NAV_WORK: [NavKey, string, string][] = [
+  ['audit', '/audit', 'Nis audit'],
+  ['jobs', '/jobs', 'Punët në proces'],
+];
+
+/** Faqja aktive sipas titullit, kur thirrësi s'e jep (faqet e GSC, punët, krahasimi, detyrat). */
+function navFor(title: string): NavKey | undefined {
+  if (title === 'Search Console' || title.startsWith('GSC ·') || title === 'Lidhja me Google') return 'gsc';
+  if (title.startsWith('Krahasim')) return 'compare';
+  if (title.startsWith('Detyrat')) return 'tasks';
+  if (title === 'Nis audit' || title === 'Konfirmo dosjen') return 'audit';
+  if (title === 'Punët' || /^(në punë|po anulohet|përfunduar|dështoi|anuluar) · /.test(title)) return 'jobs';
+  return undefined;
+}
+
+/**
+ * refreshSeconds: rifreskim me <meta refresh> (pa JavaScript) për punët në ekzekutim.
+ * active: faqja aktuale në navigim (aria-current); shiriti anësor bëhet navigim lart në ekran të ngushtë.
+ */
+/** Tregues i shkurtër në sidebar; shpjegimi i plotë hapet me tastierë/lexues ekrani (details/summary, pa JS). */
+const LOCAL_INFO = html`<details class="local"><summary><span class="ldot" aria-hidden="true"></span>Vetëm lokal</summary><p>Raportet dhe të dhënat e Search Console ruhen në këtë pajisje. Dashboard-i dëgjon vetëm në 127.0.0.1; pa llogari dhe pa server të SEO Tool.</p></details>`;
+
+export function layout(title: string, body: SafeHtml, refreshSeconds?: number, activeKey?: NavKey): string {
+  const active = activeKey ?? navFor(title);
+  const link = ([k, href, label]: [NavKey, string, string]) => html`<a href="${href}" ${k === active ? html`aria-current="page"` : ''}>${label}</a>`;
   return html`<!doctype html>
 <html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="same-origin">${refreshSeconds ? html`<meta http-equiv="refresh" content="${refreshSeconds}">` : ''}<title>${title} · SEO Tool</title><link rel="stylesheet" href="/style.css"></head>
-<body><header class="top"><span class="brand">SEO Tool · Dashboard</span><nav><a href="/">Raportet</a><a href="/audit">Nis audit</a><a href="/jobs">Punët</a><a href="/compare">Krahaso</a><a href="/gsc">Search Console</a></nav>
-<span class="local">vetëm lokal · 127.0.0.1 · pa llogari dhe pa server të SEO Tool</span></header>
-<main>${body}</main></body></html>`.value;
+<body><a class="skip" href="#permbajtja">Kalo te përmbajtja</a><div class="shell">
+<aside class="side"><a class="brand" href="/"><span class="logo" aria-hidden="true">↗</span>SEO Tool</a>
+<div class="label">Hapësira e punës</div>
+<nav class="desk" aria-label="Navigimi kryesor">${NAV.map(link)}</nav><hr><nav class="desk" aria-label="Auditet">${NAV_WORK.map(link)}</nav>
+<button type="button" class="mnav-btn" popovertarget="mnav" aria-controls="mnav"><span aria-hidden="true">☰</span> Menu<span class="cur">${(() => { const cur = [...NAV, ...NAV_WORK].find(([k]) => k === active); return cur ? ` · ${cur[2]}` : ''; })()}</span></button>
+<nav id="mnav" class="mnav" popover aria-label="Navigimi kryesor">${[...NAV, ...NAV_WORK].map(link)}${LOCAL_INFO}</nav>
+${LOCAL_INFO}</aside>
+<main id="permbajtja">${body}</main></div></body></html>`.value;
 }
 
 // ---------------------------------------------------------------- Lista
@@ -80,6 +117,8 @@ export function listView(list: ListResult, openReports?: SafeHtml): string {
 <div class="warnbox"><strong>Auditi</strong> tregon nëse modulet e auditit u kryen: <em>i përfunduar</em>, ose <em>i pjesshëm</em> kur disa module u anashkaluan (p.sh. Lighthouse u bllokua). <strong>Crawl-i</strong> tregon sa nga faqet e zbuluara u kontrolluan brenda kufijve (p.sh. 25 faqe): një audit i përfunduar mund të ketë <em>crawl të pjesshëm</em>. Health Score vlen vetëm për faqen hyrëse.</div>
 <div class="panel"><table><thead><tr><th>Data</th><th>Objekti</th><th>Lloji</th><th>Auditi</th><th class="num">Health</th><th>Crawl-i (faqe të kontrolluara)</th><th class="num">Issue</th><th>Schema</th><th></th></tr></thead>
 <tbody>${rows.length ? rows : html`<tr><td colspan="9" class="note">S'ka raporte në dosjen e raporteve.</td></tr>`}</tbody></table></div>${invalid}`,
+    undefined,
+    'reports',
   );
 }
 
@@ -187,12 +226,13 @@ ${Object.entries(BUSINESS_CATEGORY_LABELS).map(([k, label]) => {
 
   return layout(
     s.target,
-    html`<h1>${s.target}</h1>
+    html`<p class="crumb"><a href="/reports">Raportet</a> · ${s.target}</p><h1>${s.target}</h1>
 <p class="sub">${externalLink(str(r.url))} · ${fmtDate(s.date)} · ${badge(s.status, STATUS_LABELS[s.status])} · schema ${s.schema} · rregullat ${str(r.ruleSetVersion)} · <span class="code">${file}</span></p>
 ${quickNav(file, issues, ctx.g, tasks.tasks.length)}
 ${tasks.blocked ? blockedWarning(tasks.blocked, tasks.measuredOnBlock.length) : ''}
 ${arr(r.partialModules).length ? html`<div class="warnbox">Module të pjesshme/të anashkaluara: ${arr(r.partialModules).map((m) => str(obj(m).module) || str(m)).join(', ')}</div>` : ''}
 <div class="grid">${homePanel}${sitePanel}</div>
+${lhPanel(r)}
 ${(() => {
   const series = seriesOf(r);
   return series ? seriesPanel(series, (n) => (files.lhrExists(n) ? `/lhr/${encodeURIComponent(n)}` : null)) : '';
@@ -204,6 +244,8 @@ ${businessPanel}
 ${issuesPanel(file, issues, q, ctx)}
 ${recommendationsPanel(r)}
 ${limitationsPanel(arr(r.limitations).map(str))}`,
+    undefined,
+    'reports',
   );
 }
 
@@ -340,6 +382,8 @@ ${f.related.length ? html`<dt>Edhe në</dt><dd>${f.related.slice(0, 20).join(', 
 </section>
 <section class="panel"><h2>Çfarë s'kontrollohet nga skedarët</h2><ul class="plain">${arr(r.notFromFiles).map(obj).map((n) => html`<li><strong>${str(n.check)}</strong> — ${str(n.reason)}</li>`)}</ul></section>
 ${limitationsPanel(arr(r.limitations).map(str))}`,
+    undefined,
+    'reports',
   );
 }
 
@@ -360,16 +404,20 @@ ${error ? html`<div class="warnbox">${error}</div>` : ''}
   );
 }
 
-function changeList(title: string, items: IssueChange[], cls: string, withReason = false): SafeHtml {
-  return html`<section class="panel"><h2>${title} <span class="badge b-${cls}">${items.length}</span></h2>
-${items.length ? html`<table><thead><tr><th>Rëndësia</th><th>Gjetja</th><th>Faqja</th><th>Seksioni</th>${withReason ? html`<th>${title.startsWith('Të reja') ? 'Kujdes' : "Pse s'krahasohet"}</th>` : ''}</tr></thead><tbody>
-${items.map((i) => html`<tr><td>${sevBadge(i.severity as Sev)}</td><td>${i.message} <div class="code">${i.code}</div></td><td class="note">${truncate(i.url, 60)}</td><td class="note">${SECTION_LABELS[i.section]}</td>${withReason ? html`<td class="note">${i.reason ?? ''}</td>` : ''}</tr>`)}
-</tbody></table>` : html`<p class="note">Asnjë.</p>`}</section>`;
+/**
+ * Lista e ndryshimeve si seksion që hapet sipas nevojës: e hapur kur është e shkurtër (ose `open`),
+ * e mbyllur kur është e gjatë; numri duket gjithmonë te titulli.
+ */
+function changeList(title: string, items: IssueChange[], cls: string, withReason = false, open = items.length <= 6): SafeHtml {
+  return html`<details class="panel list" ${open ? html`open` : ''}><summary><h2>${title} <span class="badge b-${cls}">${items.length}</span></h2>${open ? '' : html` <span class="note">hape për listën</span>`}</summary>
+${items.length ? html`<table class="keep cardify"><thead><tr><th>Rëndësia</th><th>Gjetja</th><th>Faqja</th><th>Seksioni</th>${withReason ? html`<th>${title.startsWith('Të reja') ? 'Kujdes' : "Pse s'krahasohet"}</th>` : ''}</tr></thead><tbody>
+${items.map((i) => html`<tr><td>${sevBadge(i.severity as Sev)}</td><td class="wide">${i.message} <div class="code">${i.code}</div></td><td class="note wide" data-label="Faqja">${truncate(i.url, 60)}</td><td class="note" data-label="Seksioni">${SECTION_LABELS[i.section]}</td>${withReason ? html`<td class="note wide" data-label="${title.startsWith('Të reja') ? 'Kujdes' : "Pse s'krahasohet"}">${i.reason ?? ''}</td>` : ''}</tr>`)}
+</tbody></table>` : html`<p class="note">Asnjë.</p>`}</details>`;
 }
 
 function scoreTable(rows: ScoreRow[]): SafeHtml {
-  return html`<table><thead><tr><th>Kategoria</th><th class="num">A</th><th class="num">B</th><th class="num">Δ</th><th>Vlerësimi</th><th>Shënim</th></tr></thead><tbody>
-${rows.map((r) => html`<tr><td>${r.label}</td><td class="num">${scoreText(r.a)}</td><td class="num">${scoreText(r.b)}</td><td class="num">${r.delta === null ? '—' : r.delta > 0 ? `+${r.delta}` : String(r.delta)}</td><td>${badge(r.verdict, VERDICT_LABELS[r.verdict] ?? r.verdict)}</td><td class="note">${r.note ?? ''}</td></tr>`)}
+  return html`<table class="keep cardify"><thead><tr><th>Kategoria</th><th class="num">A</th><th class="num">B</th><th class="num">Δ</th><th>Vlerësimi</th><th>Shënim</th></tr></thead><tbody>
+${rows.map((r) => html`<tr><td>${r.label}</td><td class="num" data-label="A">${scoreText(r.a)}</td><td class="num" data-label="B">${scoreText(r.b)}</td><td class="num" data-label="Δ">${r.delta === null ? '—' : r.delta > 0 ? `+${r.delta}` : String(r.delta)}</td><td data-label="Vlerësimi">${badge(r.verdict, VERDICT_LABELS[r.verdict] ?? r.verdict)}</td><td class="note wide">${r.note ?? ''}</td></tr>`)}
 </tbody></table>`;
 }
 
@@ -382,7 +430,7 @@ export function compareView(c: CompareResult, visual?: VisualCompare, series?: S
   return layout(
     'Krahasimi',
     html`${head}
-<div class="panel"><h2>Kujdes para leximit</h2><ul class="plain">${c.caveats.map((x) => html`<li>${x}</li>`)}<li>${PROVISIONAL_THRESHOLDS}</li></ul></div>
+<div class="panel warnpanel"><h2>Kujdes para leximit</h2><ul class="plain">${c.caveats.map((x) => html`<li>${x}</li>`)}<li>${PROVISIONAL_THRESHOLDS}</li></ul></div>
 ${visual?.sameTarget && c.a.kind === 'url' ? visualComparePanel(visual) : ''}
 ${home.length ? html`<section class="panel scope"><h2>Faqja hyrëse</h2>
 <p class="note">Lighthouse: ${c.lighthouse.comparable ? 'konfigurim i njëjtë' : html`<strong>i pakrahasueshëm</strong>`}${c.lighthouse.differences.length ? html` — ${c.lighthouse.differences.join('; ')}` : ''}. Performance ndryshon mes ekzekutimeve edhe pa ndryshim në sit.${series && (series.a.real || series.b.real) ? html` Pikët më poshtë vijnë nga matja përfaqësuese e secilit raport; variacioni i serive është te <a href="#lighthouse-seria">krahasimi i serive</a>.` : ''}</p>
@@ -392,8 +440,8 @@ ${site.length ? html`<section class="panel scope"><h2>Siti (faqet e kontrolluara
 ${changeList('U zgjidhën (në A, jo në B)', c.resolved, 'improved')}
 ${changeList('Nuk u rilevua në matjen e fundit, kërkon konfirmim', c.notRedetected, 'noise')}
 ${changeList('Të reja (në B, jo në A)', c.added, 'worsened', c.added.some((i) => i.reason))}
-${changeList("S'krahasohen", c.notComparable, 'not-comparable', true)}
-${changeList('Mbetën', c.persisted, 'same')}
+${changeList("S'krahasohen", c.notComparable, 'not-comparable', true, false)}
+${changeList('Mbetën', c.persisted, 'same', false, false)}
 ${c.quality ? html`<section class="panel signals"><h2>Sinjalet e cilësisë <span class="note">(jashtë Health; s'janë provë autorësie AI)</span></h2>
 <table><thead><tr><th>Kodi</th><th class="num">A</th><th class="num">B</th></tr></thead><tbody>${c.quality.map((x) => html`<tr><td class="code">${x.code}</td><td class="num">${x.a}</td><td class="num">${x.b}</td></tr>`)}</tbody></table></section>` : ''}`,
   );
@@ -417,5 +465,5 @@ export function tasksView(file: string, r: Obj, gsc?: TasksGsc, filter?: TasksFi
 
 export function galleryView(file: string, r: Obj, q: Query, files: Files): string {
   const s = summarize(file, r);
-  return layout(`Pamjet · ${s.target}`, galleryBody(file, s.target, gallery(r, shotStateOf(files)), urlIssues(r), q));
+  return layout(`Pamjet · ${s.target}`, galleryBody(file, s.target, gallery(r, shotStateOf(files)), urlIssues(r), q), undefined, 'reports');
 }

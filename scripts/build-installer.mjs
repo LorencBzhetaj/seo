@@ -1,13 +1,15 @@
-// Ndërton paketën e Windows: build/SEO-Tool-<version>-windows-x64.zip
+// Ndërton paketat e Windows: build/SEO-Tool-<version>-windows-x64.zip (portative, me Instalo.cmd) dhe
+// build/SEO-Tool-Setup-<version>.exe (instaluesi, me ZIP-in brenda), secila me .sha256.
 //
 //   npm run installer            (ose: node scripts/build-installer.mjs [--no-prune-sentry])
 //
-// Pse ZIP + Instalo.cmd dhe jo një Setup.exe: Smart App Control i Windows 11 bllokon çdo .exe të panënshkruar
-// (edhe instaluesit), ndërsa Node-i i paketuar është i nënshkruar dhe .cmd/cscript lejohen. Përdoruesi e
-// nxjerr ZIP-in ku do; ajo dosje është dosja e instalimit. Instalo.cmd krijon shkurtoren dhe regjistrimin.
+// Setup.exe është i panënshkruar: SmartScreen / Smart App Control mund ta paralajmërojnë ose bllokojnë kur
+// vjen nga interneti (në laptopin e provës, me Smart App Control aktiv, u nis). ZIP-i mbetet alternativa:
+// Node-i i paketuar është i nënshkruar dhe .cmd/cscript lejohen.
 //
 // Hapat: tsc → "stage" (Node i këtij kompjuteri + dist + vetëm varësitë e prodhimit, të pastruara) → ZIP me
-// tar.exe të Windows. S'shkarkon asgjë: Node merret nga ai që ekzekuton këtë skript.
+// tar.exe të Windows → Setup.exe me csc.exe të .NET Framework 4.x. S'shkarkon asgjë: Node merret nga ai që
+// ekzekuton këtë skript.
 import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -155,3 +157,32 @@ const sha256 = crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('
 fs.writeFileSync(`${zip}.sha256`, `${sha256}  ${path.basename(zip)}\n`);
 log(`paketa: ${zip} (${mb(fs.statSync(zip).size)})`);
 log(`SHA-256: ${sha256} (edhe te ${path.basename(zip)}.sha256)`);
+
+// 8. Setup.exe: instalues i mirëfilltë (zgjedhja e dosjes, Start Menu, regjistrim për çinstalim) që përmban
+//    ZIP-in e mësipërm dhe thërret app\dist\app\setup.js install. Përpilohet me csc.exe të .NET Framework 4.x
+//    (pjesë e Windows 10/11): s'shkarkohet asnjë mjet. I panënshkruar: Windows (SmartScreen / Smart App Control)
+//    mund të paralajmërojë ose ta bllokojë kur skedari vjen nga interneti.
+const csc = path.join(process.env.WINDIR ?? 'C:\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+if (!fs.existsSync(csc)) throw new Error(`csc.exe mungon (${csc}): .NET Framework 4.x nevojitet për Setup.exe.`);
+const SRC = path.join(ROOT, 'scripts', 'installer');
+const NET = path.join(process.env.WINDIR ?? 'C:\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319');
+const info = path.join(BUILD, 'SetupInfo.g.cs');
+const asmVersion = `${pkg.version.split(/[.-]/).slice(0, 3).map((x) => Number.parseInt(x, 10) || 0).join('.')}.0`;
+fs.writeFileSync(info, `namespace SeoToolSetup { internal static partial class Info { public const string Version = ${JSON.stringify(pkg.version)}; public const string AssemblyVersion = ${JSON.stringify(asmVersion)}; } }\r\n`);
+const exe = path.join(BUILD, `SEO-Tool-Setup-${pkg.version}.exe`);
+execFileSync(csc, [
+  '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/codepage:65001', '/utf8output',
+  `/out:${exe}`,
+  `/win32icon:${path.join(STAGE, 'app', 'seo-tool.ico')}`,
+  `/win32manifest:${path.join(SRC, 'setup.manifest')}`,
+  `/resource:${zip},payload.zip`,
+  `/reference:${path.join(NET, 'System.IO.Compression.dll')}`,
+  `/reference:${path.join(NET, 'System.IO.Compression.FileSystem.dll')}`,
+  '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
+  path.join(SRC, 'Setup.cs'), info,
+], { stdio: 'inherit' });
+fs.rmSync(info);
+const exeSha = crypto.createHash('sha256').update(fs.readFileSync(exe)).digest('hex');
+fs.writeFileSync(`${exe}.sha256`, `${exeSha}  ${path.basename(exe)}\n`);
+log(`instaluesi: ${exe} (${mb(fs.statSync(exe).size)})`);
+log(`SHA-256: ${exeSha} (edhe te ${path.basename(exe)}.sha256)`);

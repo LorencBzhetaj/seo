@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { summarizeAgentic, summarizeLhSeo } from '../lighthouse/agentic.js';
 import path from 'node:path';
 import type { AuditRun } from '../core/run.js';
 import type { AuditResult } from '../core/schemas.js';
@@ -64,8 +65,16 @@ export function buildReport(run: AuditRun) {
           blockedRequests: lh.blockedRequests,
           // Përpjekje të dështuara para rezultatit (p.sh. NO_NAVSTART) — s'fshihen.
           failedAttempts: lh.failedAttempts ?? [],
+          // Kategoritë e Lighthouse që ruhen veç, jashtë Health (nga matja përfaqësuese kur ka seri).
+          seoCategory: summarizeLhSeo(lh),
+          agenticBrowsing: summarizeAgentic(lh),
         }
-      : { status: ctx?.lighthouse.status, code: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.code : undefined, reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined }),
+      : {
+          status: ctx?.lighthouse.status,
+          code: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.code : undefined,
+          reason: ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : undefined,
+          agenticBrowsing: { status: 'skipped' as const, experimental: true as const, reason: `Lighthouse s'dha rezultat: ${ctx?.lighthouse.status === 'error' ? ctx.lighthouse.error : ctx?.lighthouse.status === 'skipped' ? ctx.lighthouse.reason : 'pa kontekst'}` },
+        }),
       // Faza 4: çdo matje veç + përmbledhja; mungon kur u planifikua vetëm 1 matje (raportet si më parë).
       ...(ctx?.lighthouseSeries ? { series: ctx.lighthouseSeries } : {}) },
     runId: run.id,

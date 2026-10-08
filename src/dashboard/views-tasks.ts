@@ -174,11 +174,14 @@ ${f.area || f.sev ? html`<p class="note" role="status">Po shfaqen ${String(visib
 <nav class="quick" aria-label="Seksionet">${AREAS.map((a) => (counts[a] && (!f.area || f.area === a) ? html`<a href="#zona-${a}">${AREA_LABELS[a]} (${String(visible.filter((t) => t.area === a).length)})</a>` : html`<span class="note">${AREA_LABELS[a]} (${String(f.area && f.area !== a ? 0 : counts[a])})</span>`))}</nav>
 ${list.tasks.length ? (visible.length ? '' : html`<p class="note">Asnjë detyrë s'përputhet me filtrin.</p>`) : html`<p class="note">Ky raport s'ka gjetje.</p>`}
 ${AREAS.map((a) => {
+    // Seksionet hapen sipas nevojës: i pari me detyra (ose ai i filtruar) është i hapur, të tjerët mbyllur me numrin te titulli.
+    const firstArea = AREAS.find((x) => visible.some((t) => t.area === x));
     const ts = orderTasks(visible.filter((t) => t.area === a), exposureOf, gsc?.rank ?? 'technical');
     if (!ts.length) return '';
-    return html`<section class="panel ${a === 'quality' ? 'signals' : ''}" id="zona-${a}"><h2>${AREA_LABELS[a]} <span class="note">(${String(ts.length)})</span></h2>
+    const open = !!f.area || a === firstArea;
+    return html`<details class="panel list ${a === 'quality' ? 'signals' : ''}" id="zona-${a}" ${open ? html`open` : ''}><summary><h2>${AREA_LABELS[a]} <span class="note">(${String(ts.length)})</span></h2>${open ? '' : html` <span class="note">hape për detyrat</span>`}</summary>
 ${a === 'quality' ? html`<p class="note">Sinjale për shqyrtim njerëzor, jashtë Health Score. S'janë shkelje të konfirmuara të WCAG dhe s'vlerësojnë autorësinë e përmbajtjes.</p>` : ''}
-${ts.map((t) => taskBlock(file, t, list, ++n, exposureOf.get(t.id), propertyTotal))}</section>`;
+${ts.map((t) => taskBlock(file, t, list, ++n, exposureOf.get(t.id), propertyTotal))}</details>`;
   })}
 ${list.measuredOnBlock.length ? html`<section class="panel" id="matur-te-bllokimi"><h2>Matur te përgjigjja e bllokimit — s'janë detyra <span class="note">(${String(list.measuredOnBlock.length)})</span></h2>
 <p class="note">Këto gjetje u matën mbi përgjigjen HTTP ${String(list.blocked?.status ?? '')}, jo mbi faqen reale. Mund të jenë të vërteta ose jo për faqen e arritshme; vlerësoji te një audit i ri.</p>

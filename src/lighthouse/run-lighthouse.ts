@@ -26,6 +26,8 @@ export interface LhAudit {
   numericUnit?: string;
   metricSavings?: Record<string, number>;
   details?: Record<string, unknown> & { type?: string; items?: unknown };
+  explanation?: string;
+  errorMessage?: string;
 }
 
 export interface LhCategory {
@@ -33,6 +35,8 @@ export interface LhCategory {
   title: string;
   score: number | null;
   auditRefs: LhAuditRef[];
+  /** "fraction" për Agentic Browsing (Lighthouse 13.x); mungon për kategoritë me pikë 0–100. */
+  categoryScoreDisplayMode?: string;
 }
 
 export interface LighthouseData {
@@ -111,7 +115,8 @@ export async function runWithRetry<T>(once: (attempt: number) => Promise<T>, max
   }
 }
 
-const CATEGORIES = ['performance', 'accessibility', 'best-practices', 'seo'];
+// 'agentic-browsing': kategori eksperimentale e Lighthouse 13.x; ruhet veç (src/lighthouse/agentic.ts), jashtë Health.
+const CATEGORIES = ['performance', 'accessibility', 'best-practices', 'seo', 'agentic-browsing'];
 const TOTAL_TIMEOUT_MS = 150_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

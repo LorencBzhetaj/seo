@@ -279,7 +279,18 @@ export function noShortcutInstructions(reason: string, dir: string): string {
   ].join('\n');
 }
 
-export async function install(opts: { yes: boolean; desktop?: boolean; open?: boolean }): Promise<number> {
+/** Shtegu për t'u shfaqur (dritarja e Setup.exe, konsola): pa emrin e përdoruesit, që pamjet të ndahen pa të. */
+export function shownPath(p: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
+  for (const [base, label] of [[env.LOCALAPPDATA, '%LOCALAPPDATA%'], [env.APPDATA, '%APPDATA%'], [home, '%USERPROFILE%']] as const) {
+    if (!base) continue;
+    const b = base.replace(/[\\/]+$/, '');
+    const lp = p.toLowerCase(), lb = b.toLowerCase();
+    if (lp === lb || lp.startsWith(`${lb}\\`) || lp.startsWith(`${lb}/`)) return label + p.slice(b.length);
+  }
+  return p;
+}
+
+export async function install(opts: { yes: boolean; desktop?: boolean; open?: boolean; keepPrevious?: boolean }): Promise<number> {
   const dir = installDirOf();
   const dataDir = defaultDataDir();
   const problem = installDirProblem(dir, { dataDir, tempDir: os.tmpdir() });
@@ -291,8 +302,8 @@ export async function install(opts: { yes: boolean; desktop?: boolean; open?: bo
   const io = makeIo(opts.yes);
   try {
     console.log(`${APP_NAME} ${version}`);
-    console.log(`Dosja e programit: ${dir}`);
-    console.log(`Raportet dhe konfigurimi: ${dataDir} (përditësimi s'i prek; çinstalimi i ruan si parazgjedhje)`);
+    console.log(`Dosja e programit: ${shownPath(dir)}`);
+    console.log(`Raportet dhe konfigurimi: ${shownPath(dataDir)} (përditësimi s'i prek; çinstalimi i ruan si parazgjedhje)`);
     console.log('');
 
     // 1. Kontrollet, para çdo ndryshimi.
@@ -309,8 +320,10 @@ export async function install(opts: { yes: boolean; desktop?: boolean; open?: bo
     const other = prev && norm(prev) !== norm(dir) && fs.existsSync(path.join(prev, 'runtime', 'node.exe')) ? prev : undefined;
     let removeOther = false;
     if (other) {
-      console.log(`Versioni i mëparshëm është te: ${other}`);
-      removeOther = await io.ask('Të hiqen skedarët e programit të vjetër? (raportet dhe skedarët e tu mbeten)', true);
+      console.log(`Versioni i mëparshëm është te: ${shownPath(other)}`);
+      // --keep-previous (Setup.exe /KEEPPREVIOUS ose 'Jo' në dritare): programi i vjetër mbetet ku është.
+      removeOther = opts.keepPrevious ? false : await io.ask('Të hiqen skedarët e programit të vjetër? (raportet dhe skedarët e tu mbeten)', true);
+      if (!removeOther) console.log('Programi i vjetër mbetet; Start Menu dhe çinstalimi tregojnë tani këtë instalim.');
     }
     const desktop = opts.desktop ?? (opts.yes ? false : await io.ask('Shkurtore edhe në Desktop?', false));
 
@@ -361,7 +374,7 @@ export async function install(opts: { yes: boolean; desktop?: boolean; open?: bo
     } finally {
       removeSync(built);
     }
-    for (const t of placed) console.log(`Shkurtorja: ${t}`);
+    for (const t of placed) console.log(`Shkurtorja: ${shownPath(t)}`);
     removeOld();
 
     const node = spec.target;
@@ -403,7 +416,7 @@ export async function uninstall(opts: { yes: boolean; deleteData?: boolean }): P
     if (!(await io.ask(`Të çinstalohet ${APP_NAME} nga ${dir}?`, true))) return 1;
     let deleteData = opts.deleteData ?? false;
     if (opts.deleteData === undefined && !opts.yes && fs.existsSync(dataDir)) {
-      console.log(`Raportet, screenshot-et, konfigurimi dhe lidhja me Search Console (gsc\\) janë te: ${dataDir}`);
+      console.log(`Raportet, screenshot-et, konfigurimi dhe lidhja me Search Console (gsc\\) janë te: ${shownPath(dataDir)}`);
       console.log(`Fshirja s'e revokon token-in te Google: për këtë përdor "Shkëput llogarinë" në dashboard para çinstalimit.`);
       deleteData = await io.ask('Të fshihen edhe ato? (parazgjedhje: JO, mbeten në kompjuter)', false);
     }
@@ -420,9 +433,9 @@ export async function uninstall(opts: { yes: boolean; deleteData?: boolean }): P
       // Vetëm dosja e njohur e të dhënave (%LOCALAPPDATA%\SEO Tool), asgjë tjetër.
       if (path.basename(dataDir) !== APP_NAME) throw new Error(`Dosje e papritur të dhënash: ${dataDir}`);
       removeSync(dataDir, { retries: 3 });
-      console.log(`U fshinë raportet dhe konfigurimi: ${dataDir}`);
+      console.log(`U fshinë raportet dhe konfigurimi: ${shownPath(dataDir)}`);
     } else if (fs.existsSync(dataDir)) {
-      console.log(`Raportet mbetën te: ${dataDir}`);
+      console.log(`Raportet mbetën te: ${shownPath(dataDir)}`);
     }
 
     // Node-i që ekzekuton këtë skript është brenda dosjes: fshirjen e bën cmd.exe pasi ky proces të dalë.
@@ -444,10 +457,10 @@ async function main(): Promise<number> {
   const flag = (f: string) => rest.includes(f);
   const yes = flag('--yes');
   if (cmd === 'install') {
-    return install({ yes, desktop: flag('--desktop') ? true : flag('--no-desktop') ? false : undefined, open: flag('--open') ? true : flag('--no-open') ? false : undefined });
+    return install({ yes, desktop: flag('--desktop') ? true : flag('--no-desktop') ? false : undefined, open: flag('--open') ? true : flag('--no-open') ? false : undefined, keepPrevious: flag('--keep-previous') });
   }
   if (cmd === 'uninstall') return uninstall({ yes, deleteData: flag('--delete-data') ? true : flag('--keep-data') ? false : undefined });
-  console.log('Përdorimi: setup.js install [--yes] [--desktop] [--open] | uninstall [--yes] [--delete-data|--keep-data]');
+  console.log('Përdorimi: setup.js install [--yes] [--desktop] [--open] [--keep-previous] | uninstall [--yes] [--delete-data|--keep-data]');
   return 2;
 }
 

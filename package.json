@@ -1,6 +1,6 @@
 {
   "name": "website-auditor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Website Audit & Improvement Engine — MVP-1 (CLI lokal)",
   "type": "module",

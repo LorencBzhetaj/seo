@@ -15,11 +15,16 @@ import { auditFormsView, folderConfirmView, jobsListView, jobView, openReportsFo
 import { findBrowser, type BrowserLookup } from '../core/browser.js';
 import { gitAvailable } from '../core/git.js';
 import { loadConfig } from '../core/config.js';
-import { displayDir, GscStore, maskClientId, parseClientJson, redactSecrets as redactSecretsSafe } from './gsc-store.js';
+import { defaultGscDir, displayDir, GscStore, maskClientId, parseClientJson, redactSecrets as redactSecretsSafe } from './gsc-store.js';
 import { buildAuthRequest, checkState, exchangeCode, GscClient, GscError, revokeToken, type FetchFn, type GscSite, type PendingAuth } from './gsc-api.js';
 import { datasetsForReport, fetchDataset, indexDataset, latestFinalDate, presetPeriod, validatePeriod, crawlMatch, type GscDataset } from './gsc-model.js';
-import { connectBody, datasetBody, gscBody, type GscViewState } from './views-gsc.js';
+import { confirmDeleteBody, connectBody, datasetBody, gscBody, type GscViewState } from './views-gsc.js';
+
+const samePath = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 import { layout } from './views.js';
+import { overviewView } from './views-overview.js';
+import { buildTasks } from './tasks.js';
+import { urlIssues } from './model.js';
 import { comparePickerView, compareView, errorView, galleryView, listView, sourceReportView, tasksView, urlReportView, visualCompareView, type Files, type Query } from './views.js';
 
 /**
@@ -186,15 +191,31 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         lhrExists: (name) => !!lhrPath(opts.outputDir, name),
       };
 
-      if (p === '/') return page(200, listView(listReports(opts.outputDir), openReportsForm(csrf, '/')));
+      if (p === '/') return page(200, overviewPage(q.site));
+      if (p === '/reports') return page(200, listView(listReports(opts.outputDir), openReportsForm(csrf, '/reports')));
+      if (p === '/tasks') {
+        // Detyrat e raportit URL më të fundit (ose të sitit të zgjedhur); pa raport → Përmbledhja.
+        const latest = latestUrlReport(q.site);
+        return redirect(latest ? `/report/${encodeURIComponent(latest.file)}/tasks` : '/');
+      }
       // --- Search Console (vetëm lexim) ---
       if (p === '/gsc') return page(200, layout('Search Console', gscBody(await gscState({ message: GSC_MESSAGES[q.msg ?? ''], error: GSC_ERRORS[q.err ?? ''] }))));
+      if (p === '/gsc/confirm') {
+        const what = q.what === 'all' ? 'all' : 'data';
+        let n = 0;
+        try {
+          n = gscStore.listDatasets().length;
+        } catch {
+          n = 0;
+        }
+        return page(200, layout('Search Console', confirmDeleteBody(csrf, what, n)));
+      }
       if (p === '/gsc/callback') {
         if (q.error) {
           pendingAuth = undefined;
           return redirect('/gsc?err=denied');
         }
-        const bad = checkState(pendingAuth, q.state);
+        const bad = checkState(pendingAuth, q.state, gscNow().getTime());
         if (bad) return page(400, layout('Search Console', gscBody(await gscState({ error: bad }))));
         const pending = pendingAuth!;
         pendingAuth = undefined; // një përdorim
@@ -319,8 +340,39 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
       }
     }
 
+    /** Raporti URL më i fundit (për sitin e dhënë, ose për çdo sit). */
+    function latestUrlReport(siteKey?: string) {
+      const urls = listReports(opts.outputDir).reports.filter((x) => x.kind === 'url');
+      return (siteKey ? urls.find((x) => x.siteKey === siteKey) : undefined) ?? urls[0];
+    }
+
+    /** Përmbledhja: raporti URL më i fundit i sitit, detyrat dhe periudha GSC më e fundit që e mbulon. */
+    function overviewPage(siteKey?: string): string {
+      const list = listReports(opts.outputDir);
+      const urls = list.reports.filter((x) => x.kind === 'url');
+      const sites = [...new Map(urls.map((x) => [x.siteKey, { key: x.siteKey, target: x.target }])).values()];
+      const latest = latestUrlReport(siteKey);
+      const base = { sites, otherReports: list.reports.length - urls.length };
+      if (!latest) return overviewView(base);
+      const rr = readReport(opts.outputDir, latest.file);
+      if (!rr.ok) return overviewView(base);
+      let datasets: GscDataset[] = [];
+      try {
+        datasets = datasetsForReport(rr.report, gscStore.listDatasets<GscDataset>());
+      } catch {
+        datasets = [];
+      }
+      return overviewView({
+        ...base,
+        site: { key: latest.siteKey, target: latest.target },
+        latest: { summary: latest, report: rr.report },
+        tasks: buildTasks(rr.report, urlIssues(rr.report)),
+        gsc: { dataset: datasets[0] ?? null, connected: hasToken() },
+      });
+    }
+
     async function gscState(extra: Partial<GscViewState> = {}): Promise<GscViewState> {
-      const state: GscViewState = { csrf, dir: displayDir(gscStore.dir), protection: gscStore.protector.kind, demo: gscDemo, datasets: [], ...extra };
+      const state: GscViewState = { csrf, dir: displayDir(gscStore.dir), dirConfigured: !samePath(gscStore.dir, defaultGscDir()), protection: gscStore.protector.kind, demo: gscDemo, datasets: [], ...extra };
       try {
         const c = gscStore.loadClient();
         if (c) state.client = { clientId: maskClientId(c.clientId), projectId: c.projectId };
@@ -380,6 +432,8 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
           gscStore.deleteToken();
           return redirect(`/gsc?msg=disconnected${r}`);
         }
+        // Fshirjet kërkojnë konfirmimin nga faqja /gsc/confirm (fusha confirm=po); pa të → te konfirmimi.
+        if ((p === '/gsc/delete-data' || p === '/gsc/delete-all') && form.confirm !== 'po') return redirect(`/gsc/confirm?what=${p === '/gsc/delete-all' ? 'all' : 'data'}`);
         if (p === '/gsc/delete-data') {
           gscStore.deleteDatasets();
           return redirect('/gsc?msg=data-deleted');
@@ -420,7 +474,7 @@ export function createDashboard(opts: DashboardOptions): Dashboard {
         // Vetëm dosja e raporteve e këtij dashboard-i; asnjë shteg nga kërkesa.
         fs.mkdirSync(opts.outputDir, { recursive: true });
         (opts.openFolder ?? openFolderInExplorer)(opts.outputDir);
-        return redirect(form.back === '/audit' ? '/audit' : '/');
+        return redirect(form.back === '/audit' ? '/audit' : '/reports');
       }
       if (p === '/audit/url' || p === '/audit/repo') {
         const kind = p === '/audit/url' ? 'url' : 'repo';

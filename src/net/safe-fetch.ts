@@ -76,7 +76,8 @@ export class HostThrottle {
    * të lëshimit të mëparshëm (jo asaj të planifikuar), që një timer i vonuar të mos e ngushtojë
    * hapësirën me kërkesën pasardhëse — edhe me concurrency > 1.
    */
-  async wait(host: string): Promise<void> {
+  /** Kthen kohën (Date.now) kur kërkesa u lëshua: e njëjta që përdoret për kërkesën pasardhëse. */
+  async wait(host: string): Promise<number> {
     const prev = this.chain.get(host);
     const mine = (prev ?? Promise.resolve(Number.NEGATIVE_INFINITY)).then(async (prevAt) => {
       for (let remaining = prevAt + this.delayMs - Date.now(); remaining > 0; remaining = prevAt + this.delayMs - Date.now()) {
@@ -85,7 +86,7 @@ export class HostThrottle {
       return Date.now();
     });
     this.chain.set(host, mine);
-    await mine;
+    return mine;
   }
 }
 
@@ -236,8 +237,10 @@ export async function safeFetch(input: string | URL, opts: FetchOptions): Promis
       throw new FetchError(`Cikël ridrejtimesh te ${current.href}`, 'REDIRECT_LOOP', requestedUrl, redirects);
     }
     seen.add(current.href);
-    await opts.throttle?.wait(current.host);
-    opts.onDispatch?.({ phase: 'start', url: current.href, host: current.host, at: Date.now() });
+    // Instrumentimi përdor kohën e lëshimit nga throttle-i (jo një Date.now() pas await-it, që mund të
+    // ndryshojë me 1 ms dhe të duket si vonesë 99 ms).
+    const releasedAt = await opts.throttle?.wait(current.host);
+    opts.onDispatch?.({ phase: 'start', url: current.href, host: current.host, at: releasedAt ?? Date.now() });
 
     let res: SingleResponse;
     try {
